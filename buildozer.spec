@@ -5,7 +5,7 @@ package.domain = org.sasi.kanakku
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 version = 0.1
-requirements = python3,kivy
+requirements = python3,kivy,qrcode,pillow
 
 orientation = portrait
 fullscreen = 0
