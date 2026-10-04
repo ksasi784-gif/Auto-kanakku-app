@@ -1,88 +1,124 @@
+import os
+import qrcode
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
+from kivy.uix.image import Image
+from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.window import Window
 
-# பின்னணி நிறம் (Dark Theme)
-Window.clearcolor = (0.08, 0.08, 0.1, 1)
+Window.clearcolor = (0.07, 0.08, 0.1, 1)
 
 class TaxiMeterApp(App):
     def build(self):
         self.is_running = False
-        self.seconds = 0
+        self.is_waiting = False
+        self.trip_seconds = 0
+        self.wait_seconds = 0
         self.distance_km = 0.0
+        self.total_fare = 35.0
         
-        # கட்டண விவரங்கள் (கட்டண விகிதத்தை இங்கு மாற்றிக்கொள்ளலாம்)
-        self.base_fare = 35.0      # முதல் 1.8 கி.மீ-க்கு ஆரம்பக் கட்டணம்
-        self.base_km = 1.8
-        self.rate_per_km = 18.0   # அதன் பின் ஒரு கி.மீ-க்கு கட்டணம்
-        self.current_fare = self.base_fare
+        # உங்கள் சரியான UPI ID
+        self.upi_id = "9698421798@kotak811"
 
-        # முதன்மை லேஅவுட்
-        main_layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
         # தலைப்பு
         title_label = Label(
             text="DIGITAL TAXI METER",
             font_size='22sp',
             bold=True,
-            size_hint=(1, 0.1),
+            size_hint=(1, 0.08),
             color=(0.9, 0.9, 0.9, 1)
         )
         main_layout.add_widget(title_label)
 
-        # பெரிய கட்டணக் காட்சி (Digital Display Card)
-        fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.35))
-        self.fare_title = Label(text="TOTAL FARE", font_size='16sp', color=(0.7, 0.7, 0.7, 1))
+        # கட்டண விகிதங்கள் (Settings Grid)
+        settings_grid = GridLayout(cols=3, size_hint=(1, 0.14), spacing=8)
+
+        b_box = BoxLayout(orientation='vertical')
+        b_box.add_widget(Label(text="BASE (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
+        self.base_input = TextInput(text="35", multiline=False, input_filter='float', halign='center', font_size='15sp')
+        b_box.add_widget(self.base_input)
+
+        km_p_box = BoxLayout(orientation='vertical')
+        km_p_box.add_widget(Label(text="PER KM (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
+        self.km_input = TextInput(text="18", multiline=False, input_filter='float', halign='center', font_size='15sp')
+        km_p_box.add_widget(self.km_input)
+
+        wait_p_box = BoxLayout(orientation='vertical')
+        wait_p_box.add_widget(Label(text="WAIT/MIN (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
+        self.wait_input = TextInput(text="1.5", multiline=False, input_filter='float', halign='center', font_size='15sp')
+        wait_p_box.add_widget(self.wait_input)
+
+        settings_grid.add_widget(b_box)
+        settings_grid.add_widget(km_p_box)
+        settings_grid.add_widget(wait_p_box)
+        main_layout.add_widget(settings_grid)
+
+        # பெரிய மொத்தக் கட்டணக் காட்சி
+        fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.25))
+        fare_box.add_widget(Label(text="TOTAL FARE", font_size='14sp', color=(0.7, 0.7, 0.7, 1)))
         self.fare_display = Label(
-            text=f"Rs. {self.current_fare:.2f}",
-            font_size='52sp',
+            text="Rs. 35.00",
+            font_size='50sp',
             bold=True,
-            color=(0.1, 1.0, 0.3, 1)  # நியான் பச்சை நிறம்
+            color=(0.1, 1.0, 0.3, 1)
         )
-        fare_box.add_widget(self.fare_title)
         fare_box.add_widget(self.fare_display)
         main_layout.add_widget(fare_box)
 
-        # கி.மீ மற்றும் நேரம் காட்டும் பகுதி (Grid Display)
-        metrics_grid = GridLayout(cols=2, size_hint=(1, 0.25), spacing=10)
+        # தூரம், பயண நேரம், வெயிட்டிங் நேரம்
+        metrics_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=5)
 
-        # கி.மீ பெட்டி
-        km_box = BoxLayout(orientation='vertical')
-        km_title = Label(text="DISTANCE", font_size='14sp', color=(0.7, 0.7, 0.7, 1))
-        self.km_display = Label(text="0.00 KM", font_size='28sp', bold=True, color=(1, 0.8, 0.2, 1))
-        km_box.add_widget(km_title)
-        km_box.add_widget(self.km_display)
+        d_box = BoxLayout(orientation='vertical')
+        d_box.add_widget(Label(text="DISTANCE", font_size='12sp', color=(0.7, 0.7, 0.7, 1)))
+        self.km_display = Label(text="0.00 KM", font_size='18sp', bold=True, color=(1, 0.8, 0.2, 1))
+        d_box.add_widget(self.km_display)
 
-        # நேரப் பெட்டி
-        time_box = BoxLayout(orientation='vertical')
-        time_title = Label(text="TRIP TIME", font_size='14sp', color=(0.7, 0.7, 0.7, 1))
-        self.time_display = Label(text="00:00", font_size='28sp', bold=True, color=(0.3, 0.8, 1, 1))
-        time_box.add_widget(time_title)
-        time_box.add_widget(self.time_display)
+        t_box = BoxLayout(orientation='vertical')
+        t_box.add_widget(Label(text="TRIP TIME", font_size='12sp', color=(0.7, 0.7, 0.7, 1)))
+        self.time_display = Label(text="00:00", font_size='18sp', bold=True, color=(0.3, 0.8, 1, 1))
+        t_box.add_widget(self.time_display)
 
-        metrics_grid.add_widget(km_box)
-        metrics_grid.add_widget(time_box)
+        w_box = BoxLayout(orientation='vertical')
+        w_box.add_widget(Label(text="WAIT TIME", font_size='12sp', color=(0.7, 0.7, 0.7, 1)))
+        self.wait_display = Label(text="00:00", font_size='18sp', bold=True, color=(1, 0.4, 0.4, 1))
+        w_box.add_widget(self.wait_display)
+
+        metrics_grid.add_widget(d_box)
+        metrics_grid.add_widget(t_box)
+        metrics_grid.add_widget(w_box)
         main_layout.add_widget(metrics_grid)
 
-        # இயக்கப் பொத்தான்கள் (Controls)
-        btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.15), spacing=15)
+        # இயக்கப் பொத்தான்கள்
+        btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.13), spacing=10)
 
         self.start_btn = Button(
             text="START",
-            font_size='20sp',
+            font_size='18sp',
             bold=True,
             background_normal='',
             background_color=(0.15, 0.68, 0.38, 1)
         )
         self.start_btn.bind(on_press=self.toggle_meter)
 
+        self.wait_btn = Button(
+            text="WAIT ON",
+            font_size='16sp',
+            bold=True,
+            background_normal='',
+            background_color=(0.8, 0.5, 0.1, 1)
+        )
+        self.wait_btn.bind(on_press=self.toggle_waiting)
+
         self.reset_btn = Button(
             text="RESET",
-            font_size='20sp',
+            font_size='16sp',
             bold=True,
             background_normal='',
             background_color=(0.85, 0.25, 0.2, 1)
@@ -90,55 +126,144 @@ class TaxiMeterApp(App):
         self.reset_btn.bind(on_press=self.reset_meter)
 
         btn_layout.add_widget(self.start_btn)
+        btn_layout.add_widget(self.wait_btn)
         btn_layout.add_widget(self.reset_btn)
         main_layout.add_widget(btn_layout)
 
-        # டைமர் ஈவென்ட் (வினாடிக்கு ஒருமுறை இயங்கும்)
-        Clock.schedule_interval(self.update_trip, 1.0)
+        # QR CODE காட்டும் பொத்தான்
+        self.qr_btn = Button(
+            text="SHOW PAYMENT QR CODE",
+            font_size='18sp',
+            bold=True,
+            size_hint=(1, 0.12),
+            background_normal='',
+            background_color=(0.2, 0.5, 0.9, 1)
+        )
+        self.qr_btn.bind(on_press=self.show_qr_popup)
+        main_layout.add_widget(self.qr_btn)
 
+        Clock.schedule_interval(self.update_meter, 1.0)
         return main_layout
 
     def toggle_meter(self, instance):
         if not self.is_running:
             self.is_running = True
             self.start_btn.text = "STOP"
-            self.start_btn.background_color = (0.9, 0.5, 0.1, 1)
+            self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
         else:
             self.is_running = False
+            self.is_waiting = False
             self.start_btn.text = "START"
             self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
+            self.wait_btn.text = "WAIT ON"
+            self.wait_btn.background_color = (0.8, 0.5, 0.1, 1)
+            # மீட்டர் நிறுத்தியதும் தானாக QR கோடு பாப்-அப் தோன்றும்
+            self.show_qr_popup(None)
+
+    def toggle_waiting(self, instance):
+        if self.is_running:
+            self.is_waiting = not self.is_waiting
+            if self.is_waiting:
+                self.wait_btn.text = "WAIT OFF"
+                self.wait_btn.background_color = (0.3, 0.3, 0.8, 1)
+            else:
+                self.wait_btn.text = "WAIT ON"
+                self.wait_btn.background_color = (0.8, 0.5, 0.1, 1)
 
     def reset_meter(self, instance):
         self.is_running = False
-        self.seconds = 0
+        self.is_waiting = False
+        self.trip_seconds = 0
+        self.wait_seconds = 0
         self.distance_km = 0.0
-        self.current_fare = self.base_fare
+
         self.start_btn.text = "START"
         self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
-        
-        self.fare_display.text = f"Rs. {self.current_fare:.2f}"
+        self.wait_btn.text = "WAIT ON"
+        self.wait_btn.background_color = (0.8, 0.5, 0.1, 1)
+
+        base_val = float(self.base_input.text or 0)
+        self.total_fare = base_val
+        self.fare_display.text = f"Rs. {self.total_fare:.2f}"
         self.km_display.text = "0.00 KM"
         self.time_display.text = "00:00"
+        self.wait_display.text = "00:00"
 
-    def update_trip(self, dt):
+    def update_meter(self, dt):
         if self.is_running:
-            self.seconds += 1
-            mins = self.seconds // 60
-            secs = self.seconds % 60
-            self.time_display.text = f"{mins:02d}:{secs:02d}"
+            try:
+                base_fare = float(self.base_input.text or 0)
+                rate_per_km = float(self.km_input.text or 0)
+                rate_per_wait_min = float(self.wait_input.text or 0)
+            except ValueError:
+                return
 
-            # டெஸ்டிங்கிற்காக தானியங்கி தூர அதிகரிப்பு (சுமார் 30 கி.மீ/மணி வேகம்)
-            self.distance_km += 0.0083
-            self.km_display.text = f"{self.distance_km:.2f} KM"
+            self.trip_seconds += 1
+            t_min = self.trip_seconds // 60
+            t_sec = self.trip_seconds % 60
+            self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
 
-            # கட்டணக் கணக்கீடு
-            if self.distance_km <= self.base_km:
-                self.current_fare = self.base_fare
+            if self.is_waiting:
+                self.wait_seconds += 1
+                w_min = self.wait_seconds // 60
+                w_sec = self.wait_seconds % 60
+                self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
             else:
-                extra_km = self.distance_km - self.base_km
-                self.current_fare = self.base_fare + (extra_km * self.rate_per_km)
+                self.distance_km += 0.0083
+                self.km_display.text = f"{self.distance_km:.2f} KM"
 
-            self.fare_display.text = f"Rs. {self.current_fare:.2f}"
+            base_km = 1.8
+            distance_cost = 0.0
+            if self.distance_km > base_km:
+                distance_cost = (self.distance_km - base_km) * rate_per_km
+
+            waiting_cost = (self.wait_seconds / 60.0) * rate_per_wait_min
+            self.total_fare = base_fare + distance_cost + waiting_cost
+            self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+
+    def show_qr_popup(self, instance):
+        final_amt = f"{self.total_fare:.2f}"
+        upi_url = f"upi://pay?pa={self.upi_id}&pn=AutoKanakku&am={final_amt}&cu=INR"
+
+        qr = qrcode.QRCode(box_size=8, border=2)
+        qr.add_data(upi_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        qr_path = os.path.join(self.user_data_dir, "fare_qr.png")
+        img.save(qr_path)
+
+        popup_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
+        popup_layout.add_widget(Label(
+            text=f"Payable Amount: Rs. {final_amt}",
+            font_size='20sp',
+            bold=True,
+            size_hint=(1, 0.15),
+            color=(0.1, 1, 0.3, 1)
+        ))
+        
+        qr_image = Image(source=qr_path, size_hint=(1, 0.7))
+        qr_image.reload()
+        popup_layout.add_widget(qr_image)
+
+        close_btn = Button(
+            text="CLOSE",
+            font_size='16sp',
+            bold=True,
+            size_hint=(1, 0.15),
+            background_normal='',
+            background_color=(0.85, 0.25, 0.2, 1)
+        )
+        popup_layout.add_widget(close_btn)
+
+        popup = Popup(
+            title="Scan & Pay UPI",
+            content=popup_layout,
+            size_hint=(0.9, 0.75),
+            auto_dismiss=False
+        )
+        close_btn.bind(on_press=popup.dismiss)
+        popup.open()
 
 if __name__ == '__main__':
     TaxiMeterApp().run()
