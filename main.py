@@ -10,20 +10,20 @@ from kivy.uix.image import Image
 from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.window import Window
+from kivy.core.text import LabelBase
 
 Window.clearcolor = (0.07, 0.08, 0.1, 1)
 
-# மொபைலில் ஃபான்ட் பிழையால் ஆப் மூடப்படாமல் இருக்கப் பாதுகாப்பான அமைப்பு
-FONT_CANDIDATES = [
-    "/system/fonts/NotoSansTamil-Regular.ttf",
-    "/system/fonts/NotoSansTamilUI-Regular.ttf",
-    "/system/fonts/DroidSansFallback.ttf"
-]
-TAMIL_FONT = None
-for f in FONT_CANDIDATES:
-    if os.path.exists(f):
-        TAMIL_FONT = f
-        break
+# ஆப்பின் சரியான கோப்புப் பாதையைக் கண்டறிந்து எழுத்துருவை அமைத்தல்
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FONT_PATH = os.path.join(BASE_DIR, "tamil.ttf")
+
+if os.path.exists(FONT_PATH):
+    # Kivy-ன் முதன்மை எழுத்துருவாகவே தமிழைப் பதிவு செய்கிறோம்
+    LabelBase.register(name="TamilFont", fn_regular=FONT_PATH)
+    APP_FONT = "TamilFont"
+else:
+    APP_FONT = None
 
 class TaxiMeterApp(App):
     def build(self):
@@ -38,32 +38,31 @@ class TaxiMeterApp(App):
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
         # தலைப்பு
-        title_kwargs = {'font_name': TAMIL_FONT} if TAMIL_FONT else {}
         title_label = Label(
             text="டிஜிட்டல் டாக்ஸி மீட்டர்",
             font_size='22sp',
             bold=True,
+            font_name=APP_FONT,
             size_hint=(1, 0.08),
-            color=(0.9, 0.9, 0.9, 1),
-            **title_kwargs
+            color=(0.9, 0.9, 0.9, 1)
         )
         main_layout.add_widget(title_label)
 
-        # கட்டண விகிதங்கள்
+        # கட்டண அமைப்புகள்
         settings_grid = GridLayout(cols=3, size_hint=(1, 0.14), spacing=8)
 
         b_box = BoxLayout(orientation='vertical')
-        b_box.add_widget(Label(text="அடிப்படை (ரூ)", font_size='11sp', color=(0.7, 0.7, 0.7, 1), **title_kwargs))
+        b_box.add_widget(Label(text="அடிப்படை (ரூ)", font_size='11sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.base_input = TextInput(text="35", multiline=False, input_filter='float', halign='center', font_size='15sp')
         b_box.add_widget(self.base_input)
 
         km_p_box = BoxLayout(orientation='vertical')
-        km_p_box.add_widget(Label(text="கி.மீ கட்டணம் (ரூ)", font_size='11sp', color=(0.7, 0.7, 0.7, 1), **title_kwargs))
+        km_p_box.add_widget(Label(text="கி.மீ கட்டணம் (ரூ)", font_size='11sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.km_input = TextInput(text="18", multiline=False, input_filter='float', halign='center', font_size='15sp')
         km_p_box.add_widget(self.km_input)
 
         wait_p_box = BoxLayout(orientation='vertical')
-        wait_p_box.add_widget(Label(text="காத்திருப்பு/நிமி (ரூ)", font_size='11sp', color=(0.7, 0.7, 0.7, 1), **title_kwargs))
+        wait_p_box.add_widget(Label(text="காத்திருப்பு/நிமி (ரூ)", font_size='11sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.wait_input = TextInput(text="1.5", multiline=False, input_filter='float', halign='center', font_size='15sp')
         wait_p_box.add_widget(self.wait_input)
 
@@ -74,7 +73,7 @@ class TaxiMeterApp(App):
 
         # மொத்தக் கட்டணம்
         fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.25))
-        fare_box.add_widget(Label(text="மொத்த கட்டணம்", font_size='14sp', color=(0.7, 0.7, 0.7, 1), **title_kwargs))
+        fare_box.add_widget(Label(text="மொத்த கட்டணம்", font_size='14sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.fare_display = Label(
             text="Rs. 35.00",
             font_size='50sp',
@@ -84,21 +83,22 @@ class TaxiMeterApp(App):
         fare_box.add_widget(self.fare_display)
         main_layout.add_widget(fare_box)
 
-        # தூரம், பயண நேரம், காத்திருப்பு நேரம்
+        # தூரம், நேரம், காத்திருப்பு
         metrics_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=5)
 
         d_box = BoxLayout(orientation='vertical')
-        d_box.add_widget(Label(text="தூரம்", font_size='12sp', color=(0.7, 0.7, 0.7, 1), **title_kwargs))
+        d_box.add_widget(Label(text="தூரம்", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.km_display = Label(text="0.00 KM", font_size='18sp', bold=True, color=(1, 0.8, 0.2, 1))
+        d_box.add_widget(self.dist_lbl if hasattr(self, 'dist_lbl') else d_box.children[0])
         d_box.add_widget(self.km_display)
 
         t_box = BoxLayout(orientation='vertical')
-        t_box.add_widget(Label(text="பயண நேரம்", font_size='12sp', color=(0.7, 0.7, 0.7, 1), **title_kwargs))
+        t_box.add_widget(Label(text="பயண நேரம்", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.time_display = Label(text="00:00", font_size='18sp', bold=True, color=(0.3, 0.8, 1, 1))
         t_box.add_widget(self.time_display)
 
         w_box = BoxLayout(orientation='vertical')
-        w_box.add_widget(Label(text="காத்திருப்பு நேரம்", font_size='12sp', color=(0.7, 0.7, 0.7, 1), **title_kwargs))
+        w_box.add_widget(Label(text="காத்திருப்பு நேரம்", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.wait_display = Label(text="00:00", font_size='18sp', bold=True, color=(1, 0.4, 0.4, 1))
         w_box.add_widget(self.wait_display)
 
@@ -114,9 +114,9 @@ class TaxiMeterApp(App):
             text="தொடங்கு",
             font_size='16sp',
             bold=True,
+            font_name=APP_FONT,
             background_normal='',
-            background_color=(0.15, 0.68, 0.38, 1),
-            **title_kwargs
+            background_color=(0.15, 0.68, 0.38, 1)
         )
         self.start_btn.bind(on_press=self.toggle_meter)
 
@@ -124,9 +124,9 @@ class TaxiMeterApp(App):
             text="காத்திரு ON",
             font_size='14sp',
             bold=True,
+            font_name=APP_FONT,
             background_normal='',
-            background_color=(0.8, 0.5, 0.1, 1),
-            **title_kwargs
+            background_color=(0.8, 0.5, 0.1, 1)
         )
         self.wait_btn.bind(on_press=self.toggle_waiting)
 
@@ -134,9 +134,9 @@ class TaxiMeterApp(App):
             text="மீட்டமை",
             font_size='15sp',
             bold=True,
+            font_name=APP_FONT,
             background_normal='',
-            background_color=(0.85, 0.25, 0.2, 1),
-            **title_kwargs
+            background_color=(0.85, 0.25, 0.2, 1)
         )
         self.reset_btn.bind(on_press=self.reset_meter)
 
@@ -150,10 +150,10 @@ class TaxiMeterApp(App):
             text="கட்டண QR கோட்",
             font_size='17sp',
             bold=True,
+            font_name=APP_FONT,
             size_hint=(1, 0.12),
             background_normal='',
-            background_color=(0.2, 0.5, 0.9, 1),
-            **title_kwargs
+            background_color=(0.2, 0.5, 0.9, 1)
         )
         self.qr_btn.bind(on_press=self.show_qr_popup)
         main_layout.add_widget(self.qr_btn)
@@ -237,7 +237,6 @@ class TaxiMeterApp(App):
             self.fare_display.text = f"Rs. {self.total_fare:.2f}"
 
     def show_qr_popup(self, instance):
-        font_kw = {'font_name': TAMIL_FONT} if TAMIL_FONT else {}
         final_amt = f"{self.total_fare:.2f}"
         upi_url = f"upi://pay?pa={self.upi_id}&pn=AutoKanakku&am={final_amt}&cu=INR"
 
@@ -254,9 +253,9 @@ class TaxiMeterApp(App):
             text=f"செலுத்த வேண்டிய தொகை: ரூ. {final_amt}",
             font_size='18sp',
             bold=True,
+            font_name=APP_FONT,
             size_hint=(1, 0.15),
-            color=(0.1, 1, 0.3, 1),
-            **font_kw
+            color=(0.1, 1, 0.3, 1)
         ))
         
         qr_image = Image(source=qr_path, size_hint=(1, 0.7))
@@ -267,16 +266,16 @@ class TaxiMeterApp(App):
             text="மூடு",
             font_size='16sp',
             bold=True,
+            font_name=APP_FONT,
             size_hint=(1, 0.15),
             background_normal='',
-            background_color=(0.85, 0.25, 0.2, 1),
-            **font_kw
+            background_color=(0.85, 0.25, 0.2, 1)
         )
         popup_layout.add_widget(close_btn)
 
         popup = Popup(
             title="UPI மூலம் செலுத்தவும்",
-            title_font=TAMIL_FONT if TAMIL_FONT else 'Roboto',
+            title_font=APP_FONT if APP_FONT else 'Roboto',
             content=popup_layout,
             size_hint=(0.9, 0.75),
             auto_dismiss=False
