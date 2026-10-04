@@ -31,14 +31,16 @@ jobs:
 
       - name: Install Python Dependencies
         run: |
-          pip install "pip<24.1"
-          pip install "setuptools<70.0.0"
+          python -m pip install --upgrade "pip<24.0" "setuptools<69.0.0" wheel
           pip install "cython<3.0.0"
-          pip install git+https://github.com/kivy/buildozer.git@master
-          pip install git+https://github.com/kivy/python-for-android.git@master
+          pip install buildozer
 
       - name: Build with Buildozer
+        env:
+          PIP_NO_BUILD_ISOLATION: "0"
         run: |
+          # pip auto-upgrade ஆவதைத் தடுக்கும் அமைப்பு
+          export PIP_DISABLE_PIP_VERSION_CHECK=1
           buildozer -v android debug
 
       - name: Upload APK
