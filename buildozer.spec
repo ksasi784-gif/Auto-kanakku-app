@@ -3,7 +3,7 @@ title = Auto Kanakku
 package.name = autokanakku
 package.domain = org.sasi.kanakku
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,ttf
 version = 0.1
 requirements = python3,kivy,qrcode,pillow
 
