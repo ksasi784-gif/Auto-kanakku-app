@@ -14,10 +14,10 @@ from kivy.core.text import LabelBase
 
 Window.clearcolor = (0.07, 0.08, 0.1, 1)
 
-# தமிழ் எழுத்துருவை பாதுகாப்பாகப் பதிவு செய்தல்
-APP_FONT = None
+# தமிழ் எழுத்துருப் பதிவு
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(BASE_DIR, "tamil.ttf")
+APP_FONT = None
 
 if os.path.exists(FONT_PATH):
     try:
@@ -53,18 +53,18 @@ class TaxiMeterApp(App):
         settings_grid = GridLayout(cols=3, size_hint=(1, 0.14), spacing=8)
 
         b_box = BoxLayout(orientation='vertical')
-        b_box.add_widget(Label(text="அடிப்படை (ரூ)", font_size='11sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
-        self.base_input = TextInput(text="35", multiline=False, input_filter='float', halign='center', font_size='15sp')
+        b_box.add_widget(Label(text="அடிப்படை (ரூ)", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
+        self.base_input = TextInput(text="35", multiline=False, input_filter='float', halign='center', font_size='16sp')
         b_box.add_widget(self.base_input)
 
         km_p_box = BoxLayout(orientation='vertical')
-        km_p_box.add_widget(Label(text="கி.மீ கட்டணம் (ரூ)", font_size='11sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
-        self.km_input = TextInput(text="18", multiline=False, input_filter='float', halign='center', font_size='15sp')
+        km_p_box.add_widget(Label(text="கி.மீ கட்டணம் (ரூ)", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
+        self.km_input = TextInput(text="18", multiline=False, input_filter='float', halign='center', font_size='16sp')
         km_p_box.add_widget(self.km_input)
 
         wait_p_box = BoxLayout(orientation='vertical')
-        wait_p_box.add_widget(Label(text="காத்திருப்பு/நிமி (ரூ)", font_size='11sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
-        self.wait_input = TextInput(text="1.5", multiline=False, input_filter='float', halign='center', font_size='15sp')
+        wait_p_box.add_widget(Label(text="காத்திருப்பு/நிமி (ரூ)", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
+        self.wait_input = TextInput(text="1.5", multiline=False, input_filter='float', halign='center', font_size='16sp')
         wait_p_box.add_widget(self.wait_input)
 
         settings_grid.add_widget(b_box)
@@ -74,7 +74,7 @@ class TaxiMeterApp(App):
 
         # மொத்தக் கட்டணம்
         fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.25))
-        fare_box.add_widget(Label(text="மொத்த கட்டணம்", font_size='14sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
+        fare_box.add_widget(Label(text="மொத்த கட்டணம்", font_size='15sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.fare_display = Label(
             text="Rs. 35.00",
             font_size='50sp',
@@ -87,21 +87,18 @@ class TaxiMeterApp(App):
         # தூரம், பயண நேரம், காத்திருப்பு நேரம்
         metrics_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=5)
 
-        # தூரம் பாக்ஸ் (முழுமையாகச் சரிசெய்யப்பட்டது)
         d_box = BoxLayout(orientation='vertical')
-        d_box.add_widget(Label(text="தூரம்", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
+        d_box.add_widget(Label(text="தூரம்", font_size='13sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.km_display = Label(text="0.00 KM", font_size='18sp', bold=True, color=(1, 0.8, 0.2, 1))
         d_box.add_widget(self.km_display)
 
-        # நேரம் பாக்ஸ்
         t_box = BoxLayout(orientation='vertical')
-        t_box.add_widget(Label(text="பயண நேரம்", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
+        t_box.add_widget(Label(text="பயண நேரம்", font_size='13sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.time_display = Label(text="00:00", font_size='18sp', bold=True, color=(0.3, 0.8, 1, 1))
         t_box.add_widget(self.time_display)
 
-        # காத்திருப்பு பாக்ஸ்
         w_box = BoxLayout(orientation='vertical')
-        w_box.add_widget(Label(text="காத்திருப்பு நேரம்", font_size='12sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
+        w_box.add_widget(Label(text="காத்திருப்பு நேரம்", font_size='13sp', font_name=APP_FONT, color=(0.7, 0.7, 0.7, 1)))
         self.wait_display = Label(text="00:00", font_size='18sp', bold=True, color=(1, 0.4, 0.4, 1))
         w_box.add_widget(self.wait_display)
 
@@ -110,12 +107,12 @@ class TaxiMeterApp(App):
         metrics_grid.add_widget(w_box)
         main_layout.add_widget(metrics_grid)
 
-        # பொத்தான்கள் (தொடங்கு, காத்திரு, மீட்டமை)
+        # பொத்தான்கள்
         btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.13), spacing=10)
 
         self.start_btn = Button(
             text="தொடங்கு",
-            font_size='16sp',
+            font_size='17sp',
             bold=True,
             font_name=APP_FONT,
             background_normal='',
@@ -125,7 +122,7 @@ class TaxiMeterApp(App):
 
         self.wait_btn = Button(
             text="காத்திரு ON",
-            font_size='14sp',
+            font_size='15sp',
             bold=True,
             font_name=APP_FONT,
             background_normal='',
@@ -135,7 +132,7 @@ class TaxiMeterApp(App):
 
         self.reset_btn = Button(
             text="மீட்டமை",
-            font_size='15sp',
+            font_size='16sp',
             bold=True,
             font_name=APP_FONT,
             background_normal='',
@@ -151,7 +148,7 @@ class TaxiMeterApp(App):
         # QR பொத்தான்
         self.qr_btn = Button(
             text="கட்டண QR கோட்",
-            font_size='17sp',
+            font_size='18sp',
             bold=True,
             font_name=APP_FONT,
             size_hint=(1, 0.12),
@@ -288,3 +285,4 @@ class TaxiMeterApp(App):
 
 if __name__ == '__main__':
     TaxiMeterApp().run()
+ 
