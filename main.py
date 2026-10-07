@@ -1,5 +1,4 @@
 import os
-import math
 import qrcode
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -11,25 +10,8 @@ from kivy.uix.image import Image
 from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.utils import platform
-
-# Android GPS அணுகல்
-try:
-    from plyer import gps
-except Exception:
-    gps = None
 
 Window.clearcolor = (0.07, 0.08, 0.1, 1)
-
-def haversine(lat1, lon1, lat2, lon2):
-    """இரு GPS புள்ளிகளுக்கு இடையே உள்ள தூரத்தைக் (KM) கணக்கிடும் சூத்திரம்"""
-    r = 6371.0
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return r * c
 
 class TaxiMeterApp(App):
     def build(self):
@@ -39,16 +21,7 @@ class TaxiMeterApp(App):
         self.wait_seconds = 0
         self.distance_km = 0.0
         self.total_fare = 35.0
-        self.last_lat = None
-        self.last_lon = None
         self.upi_id = "9698421798@kotak811"
-
-        if platform == 'android':
-            try:
-                from android.permissions import request_permissions, Permission
-                request_permissions([Permission.ACCESS_FINE_LOCATION, Permission.ACCESS_COARSE_LOCATION])
-            except Exception:
-                pass
 
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
@@ -57,7 +30,7 @@ class TaxiMeterApp(App):
             text="DIGITAL AUTO METER",
             font_size='22sp',
             bold=True,
-            size_hint=(1, 0.07),
+            size_hint=(1, 0.08),
             color=(0.9, 0.9, 0.9, 1)
         )
         main_layout.add_widget(title_label)
@@ -97,22 +70,22 @@ class TaxiMeterApp(App):
         fare_box.add_widget(self.fare_display)
         main_layout.add_widget(fare_box)
 
-        # தூரம், பயண நேரம், காத்திருப்பு நேரம் (Big & Bold எழுத்துகள்)
+        # தூரம் (KM), பயண நேரம், காத்திருப்பு நேரம் (Big & Bold Display)
         metrics_grid = GridLayout(cols=3, size_hint=(1, 0.20), spacing=5)
 
-        # தூரம் (KM)
+        # DISTANCE (KM) - பெரிய எழுத்துகளில்
         d_box = BoxLayout(orientation='vertical')
         d_box.add_widget(Label(text="DISTANCE", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.km_display = Label(text="0.00 KM", font_size='25sp', bold=True, color=(1, 0.82, 0.1, 1))
         d_box.add_widget(self.km_display)
 
-        # பயண நேரம்
+        # TRIP TIME
         t_box = BoxLayout(orientation='vertical')
         t_box.add_widget(Label(text="TRIP TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.time_display = Label(text="00:00", font_size='25sp', bold=True, color=(0.25, 0.85, 1, 1))
         t_box.add_widget(self.time_display)
 
-        # காத்திருப்பு நேரம்
+        # WAIT TIME - பெரிய எழுத்துகளில்
         w_box = BoxLayout(orientation='vertical')
         w_box.add_widget(Label(text="WAIT TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.wait_display = Label(text="00:00", font_size='25sp', bold=True, color=(1, 0.35, 0.35, 1))
@@ -123,7 +96,7 @@ class TaxiMeterApp(App):
         metrics_grid.add_widget(w_box)
         main_layout.add_widget(metrics_grid)
 
-        # கட்டுப்பாட்டு பொத்தான்கள்
+        # பொத்தான்கள்
         btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.12), spacing=10)
 
         self.start_btn = Button(
@@ -170,54 +143,17 @@ class TaxiMeterApp(App):
         self.qr_btn.bind(on_press=self.show_qr_popup)
         main_layout.add_widget(self.qr_btn)
 
-        Clock.schedule_interval(self.update_timer, 1.0)
+        Clock.schedule_interval(self.update_meter, 1.0)
         return main_layout
-
-    def start_gps(self):
-        if gps:
-            try:
-                gps.configure(on_location=self.on_gps_location)
-                gps.start(minTime=1000, minDistance=1)
-            except Exception:
-                pass
-
-    def stop_gps(self):
-        if gps:
-            try:
-                gps.stop()
-            except Exception:
-                pass
-        self.last_lat = None
-        self.last_lon = None
-
-    def on_gps_location(self, **kwargs):
-        if not self.is_running or self.is_waiting:
-            return
-        lat = kwargs.get('lat')
-        lon = kwargs.get('lon')
-        if lat is None or lon is None:
-            return
-
-        if self.last_lat is not None and self.last_lon is not None:
-            dist = haversine(self.last_lat, self.last_lon, lat, lon)
-            if dist > 0.005:
-                self.distance_km += dist
-                self.km_display.text = f"{self.distance_km:.2f} KM"
-                self.calculate_fare()
-
-        self.last_lat = lat
-        self.last_lon = lon
 
     def toggle_meter(self, instance):
         if not self.is_running:
             self.is_running = True
             self.start_btn.text = "STOP"
             self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
-            self.start_gps()
         else:
             self.is_running = False
             self.is_waiting = False
-            self.stop_gps()
             self.start_btn.text = "START"
             self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
             self.wait_btn.text = "WAIT ON"
@@ -237,7 +173,6 @@ class TaxiMeterApp(App):
     def reset_meter(self, instance):
         self.is_running = False
         self.is_waiting = False
-        self.stop_gps()
         self.trip_seconds = 0
         self.wait_seconds = 0
         self.distance_km = 0.0
@@ -254,25 +189,15 @@ class TaxiMeterApp(App):
         self.time_display.text = "00:00"
         self.wait_display.text = "00:00"
 
-    def calculate_fare(self):
-        try:
-            base_fare = float(self.base_input.text or 0)
-            rate_per_km = float(self.km_input.text or 0)
-            rate_per_wait_min = float(self.wait_input.text or 0)
-        except ValueError:
-            return
-
-        base_km = 1.8
-        distance_cost = 0.0
-        if self.distance_km > base_km:
-            distance_cost = (self.distance_km - base_km) * rate_per_km
-
-        waiting_cost = (self.wait_seconds / 60.0) * rate_per_wait_min
-        self.total_fare = base_fare + distance_cost + waiting_cost
-        self.fare_display.text = f"Rs. {self.total_fare:.2f}"
-
-    def update_timer(self, dt):
+    def update_meter(self, dt):
         if self.is_running:
+            try:
+                base_fare = float(self.base_input.text or 0)
+                rate_per_km = float(self.km_input.text or 0)
+                rate_per_wait_min = float(self.wait_input.text or 0)
+            except ValueError:
+                return
+
             self.trip_seconds += 1
             t_min = self.trip_seconds // 60
             t_sec = self.trip_seconds % 60
@@ -283,7 +208,18 @@ class TaxiMeterApp(App):
                 w_min = self.wait_seconds // 60
                 w_sec = self.wait_seconds % 60
                 self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
-                self.calculate_fare()
+            else:
+                self.distance_km += 0.0083
+                self.km_display.text = f"{self.distance_km:.2f} KM"
+
+            base_km = 1.8
+            distance_cost = 0.0
+            if self.distance_km > base_km:
+                distance_cost = (self.distance_km - base_km) * rate_per_km
+
+            waiting_cost = (self.wait_seconds / 60.0) * rate_per_wait_min
+            self.total_fare = base_fare + distance_cost + waiting_cost
+            self.fare_display.text = f"Rs. {self.total_fare:.2f}"
 
     def show_qr_popup(self, instance):
         final_amt = f"{self.total_fare:.2f}"
