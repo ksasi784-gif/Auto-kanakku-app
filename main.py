@@ -12,6 +12,8 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 
 Window.clearcolor = (0.07, 0.08, 0.1, 1)
+# ஆண்ட்ராய்டில் கீபோர்டு திரையை மறைக்காமல் மேலே தள்ளும் அமைப்பு
+Window.softinput_mode = "below_target"
 
 class TaxiMeterApp(App):
     def build(self):
@@ -35,22 +37,40 @@ class TaxiMeterApp(App):
         )
         main_layout.add_widget(title_label)
 
-        # கட்டண விகிதங்கள்
-        settings_grid = GridLayout(cols=3, size_hint=(1, 0.13), spacing=8)
+        # கட்டண விகிதங்கள் (சுலபமாக மாற்றி அமைக்கும் வசதியுடன்)
+        settings_grid = GridLayout(cols=3, size_hint=(1, 0.14), spacing=8)
 
         b_box = BoxLayout(orientation='vertical')
         b_box.add_widget(Label(text="BASE FARE (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        self.base_input = TextInput(text="35", multiline=False, input_filter='float', halign='center', font_size='16sp')
+        self.base_input = TextInput(
+            text="35",
+            multiline=False,
+            halign='center',
+            font_size='18sp',
+            keyboard_mode='auto'
+        )
         b_box.add_widget(self.base_input)
 
         km_p_box = BoxLayout(orientation='vertical')
         km_p_box.add_widget(Label(text="PER KM (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        self.km_input = TextInput(text="18", multiline=False, input_filter='float', halign='center', font_size='16sp')
+        self.km_input = TextInput(
+            text="18",
+            multiline=False,
+            halign='center',
+            font_size='18sp',
+            keyboard_mode='auto'
+        )
         km_p_box.add_widget(self.km_input)
 
         wait_p_box = BoxLayout(orientation='vertical')
         wait_p_box.add_widget(Label(text="WAIT/MIN (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        self.wait_input = TextInput(text="1.5", multiline=False, input_filter='float', halign='center', font_size='16sp')
+        self.wait_input = TextInput(
+            text="1.5",
+            multiline=False,
+            halign='center',
+            font_size='18sp',
+            keyboard_mode='auto'
+        )
         wait_p_box.add_widget(self.wait_input)
 
         settings_grid.add_widget(b_box)
@@ -70,22 +90,19 @@ class TaxiMeterApp(App):
         fare_box.add_widget(self.fare_display)
         main_layout.add_widget(fare_box)
 
-        # தூரம் (KM), பயண நேரம், காத்திருப்பு நேரம் (Big & Bold Display)
+        # அளவீடுகள்: தூரம், நேரம், காத்திருப்பு
         metrics_grid = GridLayout(cols=3, size_hint=(1, 0.20), spacing=5)
 
-        # DISTANCE (KM) - பெரிய எழுத்துகளில்
         d_box = BoxLayout(orientation='vertical')
         d_box.add_widget(Label(text="DISTANCE", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.km_display = Label(text="0.00 KM", font_size='25sp', bold=True, color=(1, 0.82, 0.1, 1))
         d_box.add_widget(self.km_display)
 
-        # TRIP TIME
         t_box = BoxLayout(orientation='vertical')
         t_box.add_widget(Label(text="TRIP TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.time_display = Label(text="00:00", font_size='25sp', bold=True, color=(0.25, 0.85, 1, 1))
         t_box.add_widget(self.time_display)
 
-        # WAIT TIME - பெரிய எழுத்துகளில்
         w_box = BoxLayout(orientation='vertical')
         w_box.add_widget(Label(text="WAIT TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.wait_display = Label(text="00:00", font_size='25sp', bold=True, color=(1, 0.35, 0.35, 1))
@@ -182,7 +199,11 @@ class TaxiMeterApp(App):
         self.wait_btn.text = "WAIT ON"
         self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
 
-        base_val = float(self.base_input.text or 0)
+        try:
+            base_val = float(self.base_input.text.strip())
+        except ValueError:
+            base_val = 35.0
+
         self.total_fare = base_val
         self.fare_display.text = f"Rs. {self.total_fare:.2f}"
         self.km_display.text = "0.00 KM"
@@ -192,9 +213,9 @@ class TaxiMeterApp(App):
     def update_meter(self, dt):
         if self.is_running:
             try:
-                base_fare = float(self.base_input.text or 0)
-                rate_per_km = float(self.km_input.text or 0)
-                rate_per_wait_min = float(self.wait_input.text or 0)
+                base_fare = float(self.base_input.text.strip() or 0)
+                rate_per_km = float(self.km_input.text.strip() or 0)
+                rate_per_wait_min = float(self.wait_input.text.strip() or 0)
             except ValueError:
                 return
 
@@ -267,3 +288,4 @@ class TaxiMeterApp(App):
 
 if __name__ == '__main__':
     TaxiMeterApp().run()
+ 
