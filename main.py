@@ -4,7 +4,6 @@ from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.image import Image
 from kivy.uix.popup import Popup
@@ -12,8 +11,6 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 
 Window.clearcolor = (0.07, 0.08, 0.1, 1)
-# ஆண்ட்ராய்டில் கீபோர்டு திரையை மறைக்காமல் மேலே தள்ளும் அமைப்பு
-Window.softinput_mode = "below_target"
 
 class TaxiMeterApp(App):
     def build(self):
@@ -22,7 +19,12 @@ class TaxiMeterApp(App):
         self.trip_seconds = 0
         self.wait_seconds = 0
         self.distance_km = 0.0
-        self.total_fare = 35.0
+        
+        # கட்டண மதிப்புகள் (State)
+        self.val_base = 35.0
+        self.val_km = 18.0
+        self.val_wait = 1.5
+        self.total_fare = self.val_base
         self.upi_id = "9698421798@kotak811"
 
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
@@ -37,52 +39,61 @@ class TaxiMeterApp(App):
         )
         main_layout.add_widget(title_label)
 
-        # கட்டண விகிதங்கள் (சுலபமாக மாற்றி அமைக்கும் வசதியுடன்)
-        settings_grid = GridLayout(cols=3, size_hint=(1, 0.14), spacing=8)
+        # கட்டண அமைப்புகள் (+ / - பட்டன்களுடன்)
+        settings_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=8)
 
+        # 1. Base Fare Selector
         b_box = BoxLayout(orientation='vertical')
-        b_box.add_widget(Label(text="BASE FARE (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        self.base_input = TextInput(
-            text="35",
-            multiline=False,
-            halign='center',
-            font_size='18sp',
-            keyboard_mode='auto'
-        )
-        b_box.add_widget(self.base_input)
+        b_box.add_widget(Label(text="BASE FARE", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
+        b_ctrl = BoxLayout(orientation='horizontal')
+        b_minus = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_color=(0.3, 0.3, 0.3, 1))
+        b_minus.bind(on_press=lambda x: self.adjust_rate('base', -5))
+        self.b_lbl = Label(text=f"{int(self.val_base)}", font_size='18sp', bold=True, size_hint=(0.4, 1))
+        b_plus = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_color=(0.3, 0.3, 0.3, 1))
+        b_plus.bind(on_press=lambda x: self.adjust_rate('base', 5))
+        b_ctrl.add_widget(b_minus)
+        b_ctrl.add_widget(self.b_lbl)
+        b_ctrl.add_widget(b_plus)
+        b_box.add_widget(b_ctrl)
 
-        km_p_box = BoxLayout(orientation='vertical')
-        km_p_box.add_widget(Label(text="PER KM (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        self.km_input = TextInput(
-            text="18",
-            multiline=False,
-            halign='center',
-            font_size='18sp',
-            keyboard_mode='auto'
-        )
-        km_p_box.add_widget(self.km_input)
+        # 2. Per KM Selector
+        km_box = BoxLayout(orientation='vertical')
+        km_box.add_widget(Label(text="PER KM", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
+        km_ctrl = BoxLayout(orientation='horizontal')
+        km_minus = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_color=(0.3, 0.3, 0.3, 1))
+        km_minus.bind(on_press=lambda x: self.adjust_rate('km', -1))
+        self.km_lbl = Label(text=f"{int(self.val_km)}", font_size='18sp', bold=True, size_hint=(0.4, 1))
+        km_plus = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_color=(0.3, 0.3, 0.3, 1))
+        km_plus.bind(on_press=lambda x: self.adjust_rate('km', 1))
+        km_ctrl.add_widget(km_minus)
+        km_ctrl.add_widget(self.km_lbl)
+        km_ctrl.add_widget(km_plus)
+        km_box.add_widget(km_ctrl)
 
-        wait_p_box = BoxLayout(orientation='vertical')
-        wait_p_box.add_widget(Label(text="WAIT/MIN (Rs)", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        self.wait_input = TextInput(
-            text="1.5",
-            multiline=False,
-            halign='center',
-            font_size='18sp',
-            keyboard_mode='auto'
-        )
-        wait_p_box.add_widget(self.wait_input)
+        # 3. Wait Rate Selector
+        w_box = BoxLayout(orientation='vertical')
+        w_box.add_widget(Label(text="WAIT/MIN", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
+        w_ctrl = BoxLayout(orientation='horizontal')
+        w_minus = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_color=(0.3, 0.3, 0.3, 1))
+        w_minus.bind(on_press=lambda x: self.adjust_rate('wait', -0.5))
+        self.w_lbl = Label(text=f"{self.val_wait:.1f}", font_size='18sp', bold=True, size_hint=(0.4, 1))
+        w_plus = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_color=(0.3, 0.3, 0.3, 1))
+        w_plus.bind(on_press=lambda x: self.adjust_rate('wait', 0.5))
+        w_ctrl.add_widget(w_minus)
+        w_ctrl.add_widget(self.w_lbl)
+        w_ctrl.add_widget(w_plus)
+        w_box.add_widget(w_ctrl)
 
         settings_grid.add_widget(b_box)
-        settings_grid.add_widget(km_p_box)
-        settings_grid.add_widget(wait_p_box)
+        settings_grid.add_widget(km_box)
+        settings_grid.add_widget(w_box)
         main_layout.add_widget(settings_grid)
 
         # மொத்தக் கட்டணம்
-        fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.24))
+        fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.23))
         fare_box.add_widget(Label(text="TOTAL FARE", font_size='15sp', bold=True, color=(0.7, 0.7, 0.7, 1)))
         self.fare_display = Label(
-            text="Rs. 35.00",
+            text=f"Rs. {self.total_fare:.2f}",
             font_size='54sp',
             bold=True,
             color=(0.1, 1.0, 0.3, 1)
@@ -91,26 +102,26 @@ class TaxiMeterApp(App):
         main_layout.add_widget(fare_box)
 
         # அளவீடுகள்: தூரம், நேரம், காத்திருப்பு
-        metrics_grid = GridLayout(cols=3, size_hint=(1, 0.20), spacing=5)
+        metrics_grid = GridLayout(cols=3, size_hint=(1, 0.19), spacing=5)
 
-        d_box = BoxLayout(orientation='vertical')
-        d_box.add_widget(Label(text="DISTANCE", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
+        d_sub = BoxLayout(orientation='vertical')
+        d_sub.add_widget(Label(text="DISTANCE", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.km_display = Label(text="0.00 KM", font_size='25sp', bold=True, color=(1, 0.82, 0.1, 1))
-        d_box.add_widget(self.km_display)
+        d_sub.add_widget(self.km_display)
 
-        t_box = BoxLayout(orientation='vertical')
-        t_box.add_widget(Label(text="TRIP TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
+        t_sub = BoxLayout(orientation='vertical')
+        t_sub.add_widget(Label(text="TRIP TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.time_display = Label(text="00:00", font_size='25sp', bold=True, color=(0.25, 0.85, 1, 1))
-        t_box.add_widget(self.time_display)
+        t_sub.add_widget(self.time_display)
 
-        w_box = BoxLayout(orientation='vertical')
-        w_box.add_widget(Label(text="WAIT TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
+        w_sub = BoxLayout(orientation='vertical')
+        w_sub.add_widget(Label(text="WAIT TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
         self.wait_display = Label(text="00:00", font_size='25sp', bold=True, color=(1, 0.35, 0.35, 1))
-        w_box.add_widget(self.wait_display)
+        w_sub.add_widget(self.wait_display)
 
-        metrics_grid.add_widget(d_box)
-        metrics_grid.add_widget(t_box)
-        metrics_grid.add_widget(w_box)
+        metrics_grid.add_widget(d_sub)
+        metrics_grid.add_widget(t_sub)
+        metrics_grid.add_widget(w_sub)
         main_layout.add_widget(metrics_grid)
 
         # பொத்தான்கள்
@@ -163,6 +174,20 @@ class TaxiMeterApp(App):
         Clock.schedule_interval(self.update_meter, 1.0)
         return main_layout
 
+    def adjust_rate(self, kind, step):
+        if kind == 'base':
+            self.val_base = max(10.0, self.val_base + step)
+            self.b_lbl.text = f"{int(self.val_base)}"
+            if not self.is_running:
+                self.total_fare = self.val_base
+                self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+        elif kind == 'km':
+            self.val_km = max(5.0, self.val_km + step)
+            self.km_lbl.text = f"{int(self.val_km)}"
+        elif kind == 'wait':
+            self.val_wait = max(0.5, self.val_wait + step)
+            self.w_lbl.text = f"{self.val_wait:.1f}"
+
     def toggle_meter(self, instance):
         if not self.is_running:
             self.is_running = True
@@ -199,12 +224,7 @@ class TaxiMeterApp(App):
         self.wait_btn.text = "WAIT ON"
         self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
 
-        try:
-            base_val = float(self.base_input.text.strip())
-        except ValueError:
-            base_val = 35.0
-
-        self.total_fare = base_val
+        self.total_fare = self.val_base
         self.fare_display.text = f"Rs. {self.total_fare:.2f}"
         self.km_display.text = "0.00 KM"
         self.time_display.text = "00:00"
@@ -212,13 +232,6 @@ class TaxiMeterApp(App):
 
     def update_meter(self, dt):
         if self.is_running:
-            try:
-                base_fare = float(self.base_input.text.strip() or 0)
-                rate_per_km = float(self.km_input.text.strip() or 0)
-                rate_per_wait_min = float(self.wait_input.text.strip() or 0)
-            except ValueError:
-                return
-
             self.trip_seconds += 1
             t_min = self.trip_seconds // 60
             t_sec = self.trip_seconds % 60
@@ -236,10 +249,10 @@ class TaxiMeterApp(App):
             base_km = 1.8
             distance_cost = 0.0
             if self.distance_km > base_km:
-                distance_cost = (self.distance_km - base_km) * rate_per_km
+                distance_cost = (self.distance_km - base_km) * self.val_km
 
-            waiting_cost = (self.wait_seconds / 60.0) * rate_per_wait_min
-            self.total_fare = base_fare + distance_cost + waiting_cost
+            waiting_cost = (self.wait_seconds / 60.0) * self.val_wait
+            self.total_fare = self.val_base + distance_cost + waiting_cost
             self.fare_display.text = f"Rs. {self.total_fare:.2f}"
 
     def show_qr_popup(self, instance):
