@@ -39,11 +39,7 @@ class TaxiMeterApp(App):
 
         self.last_lat = None
         self.last_lon = None
-        self.loc_listener = None
-        self.loc_manager = None
-
-        if platform == 'android':
-            self.init_android_gps()
+        self.gps_active = False
 
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
@@ -56,12 +52,11 @@ class TaxiMeterApp(App):
             color=(0.9, 0.9, 0.9, 1)
         ))
 
-        # வண்ணமயமான +/- பட்டன்கள் கொண்ட கட்டண அமைப்புகள்
+        # கட்டண அமைப்புகள் (+/- பட்டன்கள் கலருடன்)
         settings_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=8)
 
-        # பட்டன்களுக்கான நிறங்கள்
-        minus_color = (0.75, 0.22, 0.17, 1)  # தெளிவான சிவப்பு
-        plus_color = (0.16, 0.50, 0.73, 1)   # பளிச்சென்ற நீலம்
+        minus_color = (0.75, 0.22, 0.17, 1)  # சிவப்பு
+        plus_color = (0.16, 0.50, 0.73, 1)   # நீலம்
 
         # 1. BASE FARE
         b_box = BoxLayout(orientation='vertical')
@@ -122,7 +117,7 @@ class TaxiMeterApp(App):
         fare_box.add_widget(self.fare_display)
         main_layout.add_widget(fare_box)
 
-        # அளவீடுகள்: தூரம், நேரம், காத்திருப்பு
+        # அளவீடுகள்
         metrics_grid = GridLayout(cols=3, size_hint=(1, 0.19), spacing=5)
 
         d_sub = BoxLayout(orientation='vertical')
@@ -135,4 +130,116 @@ class TaxiMeterApp(App):
         self.time_display = Label(text="00:00", font_size='25sp', bold=True, color=(0.25, 0.85, 1, 1))
         t_sub.add_widget(self.time_display)
 
-        w_sub
+        w_sub = BoxLayout(orientation='vertical')
+        w_sub.add_widget(Label(text="WAIT TIME", font_size='13sp', bold=True, color=(0.8, 0.8, 0.8, 1)))
+        self.wait_display = Label(text="00:00", font_size='25sp', bold=True, color=(1, 0.35, 0.35, 1))
+        w_sub.add_widget(self.wait_display)
+
+        metrics_grid.add_widget(d_sub)
+        metrics_grid.add_widget(t_sub)
+        metrics_grid.add_widget(w_sub)
+        main_layout.add_widget(metrics_grid)
+
+        # கட்டுப்பாட்டு பொத்தான்கள்
+        btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.12), spacing=10)
+
+        self.start_btn = Button(
+            text="START",
+            font_size='18sp',
+            bold=True,
+            background_normal='',
+            background_color=(0.15, 0.68, 0.38, 1)
+        )
+        self.start_btn.bind(on_press=self.toggle_meter)
+
+        self.wait_btn = Button(
+            text="WAIT ON",
+            font_size='15sp',
+            bold=True,
+            background_normal='',
+            background_color=(0.85, 0.5, 0.1, 1)
+        )
+        self.wait_btn.bind(on_press=self.toggle_waiting)
+
+        self.reset_btn = Button(
+            text="RESET",
+            font_size='16sp',
+            bold=True,
+            background_normal='',
+            background_color=(0.85, 0.25, 0.2, 1)
+        )
+        self.reset_btn.bind(on_press=self.reset_meter)
+
+        btn_layout.add_widget(self.start_btn)
+        btn_layout.add_widget(self.wait_btn)
+        btn_layout.add_widget(self.reset_btn)
+        main_layout.add_widget(btn_layout)
+
+        # QR பொத்தான்
+        self.qr_btn = Button(
+            text="PAYMENT QR CODE",
+            font_size='18sp',
+            bold=True,
+            size_hint=(1, 0.11),
+            background_normal='',
+            background_color=(0.2, 0.5, 0.9, 1)
+        )
+        self.qr_btn.bind(on_press=self.show_qr_popup)
+        main_layout.add_widget(self.qr_btn)
+
+        Clock.schedule_interval(self.update_timer, 1.0)
+        Clock.schedule_once(self.request_android_permissions, 1.0)
+        return main_layout
+
+    def request_android_permissions(self, dt):
+        if platform == 'android':
+            try:
+                from android.permissions import request_permissions, Permission
+                request_permissions([Permission.ACCESS_FINE_LOCATION, Permission.ACCESS_COARSE_LOCATION])
+            except Exception:
+                pass
+
+    def adjust_rate(self, kind, step):
+        if kind == 'base':
+            self.val_base = max(10.0, self.val_base + step)
+            self.b_lbl.text = f"{int(self.val_base)}"
+            if not self.is_running:
+                self.total_fare = self.val_base
+                self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+        elif kind == 'km':
+            self.val_km = max(5.0, self.val_km + step)
+            self.km_lbl.text = f"{int(self.val_km)}"
+        elif kind == 'wait':
+            self.val_wait = max(0.5, self.val_wait + step)
+            self.w_lbl.text = f"{self.val_wait:.1f}"
+
+    def toggle_meter(self, instance):
+        if not self.is_running:
+            self.is_running = True
+            self.start_btn.text = "STOP"
+            self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
+        else:
+            self.is_running = False
+            self.is_waiting = False
+            self.start_btn.text = "START"
+            self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
+            self.wait_btn.text = "WAIT ON"
+            self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+            self.show_qr_popup(None)
+
+    def toggle_waiting(self, instance):
+        if self.is_running:
+            self.is_waiting = not self.is_waiting
+            if self.is_waiting:
+                self.wait_btn.text = "WAIT OFF"
+                self.wait_btn.background_color = (0.3, 0.3, 0.8, 1)
+            else:
+                self.wait_btn.text = "WAIT ON"
+                self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+
+    def reset_meter(self, instance):
+        self.is_running = False
+        self.is_waiting = False
+        self.trip_seconds = 0
+        self.wait_seconds = 0
+        self.distance_km =
