@@ -8,6 +8,7 @@ version = 0.1
 requirements = python3,kivy,qrcode,pillow
 orientation = portrait
 fullscreen = 0
+android.permissions = ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION
 
 android.archs = arm64-v8a
 android.api = 33
