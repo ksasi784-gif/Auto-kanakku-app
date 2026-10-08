@@ -1,5 +1,4 @@
 import os
-import math
 import qrcode
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -10,18 +9,8 @@ from kivy.uix.image import Image
 from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.utils import platform
 
 Window.clearcolor = (0.07, 0.08, 0.1, 1)
-
-def haversine(lat1, lon1, lat2, lon2):
-    r = 6371.0
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return r * c
 
 class TaxiMeterApp(App):
     def build(self):
@@ -36,10 +25,6 @@ class TaxiMeterApp(App):
         self.val_wait = 1.5
         self.total_fare = self.val_base
         self.upi_id = "9698421798@kotak811"
-
-        self.last_lat = None
-        self.last_lon = None
-        self.gps_active = False
 
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
@@ -117,7 +102,7 @@ class TaxiMeterApp(App):
         fare_box.add_widget(self.fare_display)
         main_layout.add_widget(fare_box)
 
-        # அளவீடுகள்
+        # தூரம், பயண நேரம், காத்திருப்பு நேரம்
         metrics_grid = GridLayout(cols=3, size_hint=(1, 0.19), spacing=5)
 
         d_sub = BoxLayout(orientation='vertical')
@@ -140,7 +125,7 @@ class TaxiMeterApp(App):
         metrics_grid.add_widget(w_sub)
         main_layout.add_widget(metrics_grid)
 
-        # கட்டுப்பாட்டு பொத்தான்கள்
+        # பிரதான பொத்தான்கள்
         btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.12), spacing=10)
 
         self.start_btn = Button(
@@ -175,7 +160,7 @@ class TaxiMeterApp(App):
         btn_layout.add_widget(self.reset_btn)
         main_layout.add_widget(btn_layout)
 
-        # QR பொத்தான்
+        # கட்டண QR பொத்தான்
         self.qr_btn = Button(
             text="PAYMENT QR CODE",
             font_size='18sp',
@@ -188,16 +173,7 @@ class TaxiMeterApp(App):
         main_layout.add_widget(self.qr_btn)
 
         Clock.schedule_interval(self.update_timer, 1.0)
-        Clock.schedule_once(self.request_android_permissions, 1.0)
         return main_layout
-
-    def request_android_permissions(self, dt):
-        if platform == 'android':
-            try:
-                from android.permissions import request_permissions, Permission
-                request_permissions([Permission.ACCESS_FINE_LOCATION, Permission.ACCESS_COARSE_LOCATION])
-            except Exception:
-                pass
 
     def adjust_rate(self, kind, step):
         if kind == 'base':
@@ -242,4 +218,86 @@ class TaxiMeterApp(App):
         self.is_waiting = False
         self.trip_seconds = 0
         self.wait_seconds = 0
-        self.distance_km =
+        self.distance_km = 0.0
+
+        self.start_btn.text = "START"
+        self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
+        self.wait_btn.text = "WAIT ON"
+        self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+
+        self.total_fare = self.val_base
+        self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+        self.km_display.text = "0.00 KM"
+        self.time_display.text = "00:00"
+        self.wait_display.text = "00:00"
+
+    def recalculate_fare(self):
+        base_km = 1.8
+        distance_cost = 0.0
+        if self.distance_km > base_km:
+            distance_cost = (self.distance_km - base_km) * self.val_km
+
+        waiting_cost = (self.wait_seconds / 60.0) * self.val_wait
+        self.total_fare = self.val_base + distance_cost + waiting_cost
+        self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+
+    def update_timer(self, dt):
+        if self.is_running:
+            self.trip_seconds += 1
+            t_min = self.trip_seconds // 60
+            t_sec = self.trip_seconds % 60
+            self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
+
+            if self.is_waiting:
+                self.wait_seconds += 1
+                w_min = self.wait_seconds // 60
+                w_sec = self.wait_seconds % 60
+                self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
+                self.recalculate_fare()
+
+    def show_qr_popup(self, instance):
+        final_amt = f"{self.total_fare:.2f}"
+        upi_url = f"upi://pay?pa={self.upi_id}&pn=AutoKanakku&am={final_amt}&cu=INR"
+
+        qr = qrcode.QRCode(box_size=8, border=2)
+        qr.add_data(upi_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        qr_path = os.path.join(self.user_data_dir, "fare_qr.png")
+        img.save(qr_path)
+
+        popup_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
+        popup_layout.add_widget(Label(
+            text=f"Total Fare: Rs. {final_amt}",
+            font_size='22sp',
+            bold=True,
+            size_hint=(1, 0.15),
+            color=(0.1, 1, 0.3, 1)
+        ))
+        
+        qr_image = Image(source=qr_path, size_hint=(1, 0.7))
+        qr_image.reload()
+        popup_layout.add_widget(qr_image)
+
+        close_btn = Button(
+            text="CLOSE",
+            font_size='16sp',
+            bold=True,
+            size_hint=(1, 0.15),
+            background_normal='',
+            background_color=(0.85, 0.25, 0.2, 1)
+        )
+        popup_layout.add_widget(close_btn)
+
+        popup = Popup(
+            title="Scan & Pay UPI",
+            content=popup_layout,
+            size_hint=(0.9, 0.75),
+            auto_dismiss=False
+        )
+        close_btn.bind(on_press=popup.dismiss)
+        popup.open()
+
+if __name__ == '__main__':
+    TaxiMeterApp().run()
