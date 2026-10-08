@@ -20,6 +20,7 @@ class TaxiMeterApp(App):
         self.wait_seconds = 0
         self.distance_km = 0.0
         
+        # இயல்புநிலை கட்டணங்கள்
         self.val_base = 35.0
         self.val_km = 18.0
         self.val_wait = 1.5
@@ -37,51 +38,53 @@ class TaxiMeterApp(App):
             color=(0.9, 0.9, 0.9, 1)
         ))
 
-        # கட்டண அமைப்புகள் (+/- பட்டன்கள் கலருடன்)
+        # கட்டண அமைப்புகள் (+/- பட்டன்கள் மற்றும் தொட்டு எண் மாற்றும் வசதி)
         settings_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=8)
-
-        minus_color = (0.75, 0.22, 0.17, 1)  # சிவப்பு
-        plus_color = (0.16, 0.50, 0.73, 1)   # நீலம்
+        minus_color = (0.75, 0.22, 0.17, 1)
+        plus_color = (0.16, 0.50, 0.73, 1)
 
         # 1. BASE FARE
         b_box = BoxLayout(orientation='vertical')
         b_box.add_widget(Label(text="BASE FARE", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        b_ctrl = BoxLayout(orientation='horizontal', spacing=3)
-        b_minus = Button(text="-", font_size='20sp', bold=True, size_hint=(0.32, 1), background_normal='', background_color=minus_color)
+        b_ctrl = BoxLayout(orientation='horizontal', spacing=2)
+        b_minus = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=minus_color)
         b_minus.bind(on_press=lambda x: self.adjust_rate('base', -5))
-        self.b_lbl = Label(text=f"{int(self.val_base)}", font_size='18sp', bold=True, size_hint=(0.36, 1))
-        b_plus = Button(text="+", font_size='20sp', bold=True, size_hint=(0.32, 1), background_normal='', background_color=plus_color)
+        self.b_btn = Button(text=f"{int(self.val_base)}", font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.18, 0.2, 0.25, 1))
+        self.b_btn.bind(on_press=lambda x: self.open_numpad('base'))
+        b_plus = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=plus_color)
         b_plus.bind(on_press=lambda x: self.adjust_rate('base', 5))
         b_ctrl.add_widget(b_minus)
-        b_ctrl.add_widget(self.b_lbl)
+        b_ctrl.add_widget(self.b_btn)
         b_ctrl.add_widget(b_plus)
         b_box.add_widget(b_ctrl)
 
         # 2. PER KM
         km_box = BoxLayout(orientation='vertical')
         km_box.add_widget(Label(text="PER KM", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        km_ctrl = BoxLayout(orientation='horizontal', spacing=3)
-        km_minus = Button(text="-", font_size='20sp', bold=True, size_hint=(0.32, 1), background_normal='', background_color=minus_color)
+        km_ctrl = BoxLayout(orientation='horizontal', spacing=2)
+        km_minus = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=minus_color)
         km_minus.bind(on_press=lambda x: self.adjust_rate('km', -1))
-        self.km_lbl = Label(text=f"{int(self.val_km)}", font_size='18sp', bold=True, size_hint=(0.36, 1))
-        km_plus = Button(text="+", font_size='20sp', bold=True, size_hint=(0.32, 1), background_normal='', background_color=plus_color)
+        self.km_btn = Button(text=f"{int(self.val_km)}", font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.18, 0.2, 0.25, 1))
+        self.km_btn.bind(on_press=lambda x: self.open_numpad('km'))
+        km_plus = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=plus_color)
         km_plus.bind(on_press=lambda x: self.adjust_rate('km', 1))
         km_ctrl.add_widget(km_minus)
-        km_ctrl.add_widget(self.km_lbl)
+        km_ctrl.add_widget(self.km_btn)
         km_ctrl.add_widget(km_plus)
         km_box.add_widget(km_ctrl)
 
         # 3. WAIT/MIN
         w_box = BoxLayout(orientation='vertical')
         w_box.add_widget(Label(text="WAIT/MIN", font_size='11sp', color=(0.7, 0.7, 0.7, 1)))
-        w_ctrl = BoxLayout(orientation='horizontal', spacing=3)
-        w_minus = Button(text="-", font_size='20sp', bold=True, size_hint=(0.32, 1), background_normal='', background_color=minus_color)
+        w_ctrl = BoxLayout(orientation='horizontal', spacing=2)
+        w_minus = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=minus_color)
         w_minus.bind(on_press=lambda x: self.adjust_rate('wait', -0.5))
-        self.w_lbl = Label(text=f"{self.val_wait:.1f}", font_size='18sp', bold=True, size_hint=(0.36, 1))
-        w_plus = Button(text="+", font_size='20sp', bold=True, size_hint=(0.32, 1), background_normal='', background_color=plus_color)
+        self.w_btn = Button(text=f"{self.val_wait:.1f}", font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.18, 0.2, 0.25, 1))
+        self.w_btn.bind(on_press=lambda x: self.open_numpad('wait'))
+        w_plus = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=plus_color)
         w_plus.bind(on_press=lambda x: self.adjust_rate('wait', 0.5))
         w_ctrl.add_widget(w_minus)
-        w_ctrl.add_widget(self.w_lbl)
+        w_ctrl.add_widget(self.w_btn)
         w_ctrl.add_widget(w_plus)
         w_box.add_widget(w_ctrl)
 
@@ -102,7 +105,7 @@ class TaxiMeterApp(App):
         fare_box.add_widget(self.fare_display)
         main_layout.add_widget(fare_box)
 
-        # தூரம், பயண நேரம், காத்திருப்பு நேரம்
+        # அளவீடுகள்: தூரம், நேரம், காத்திருப்பு
         metrics_grid = GridLayout(cols=3, size_hint=(1, 0.19), spacing=5)
 
         d_sub = BoxLayout(orientation='vertical')
@@ -160,34 +163,86 @@ class TaxiMeterApp(App):
         btn_layout.add_widget(self.reset_btn)
         main_layout.add_widget(btn_layout)
 
-        # கட்டண QR பொத்தான்
-        self.qr_btn = Button(
-            text="PAYMENT QR CODE",
-            font_size='18sp',
+        # PAYMENT OPTIONS (CASH & QR) பட்டன்
+        self.pay_btn = Button(
+            text="PAYMENT OPTIONS (CASH / QR)",
+            font_size='17sp',
             bold=True,
             size_hint=(1, 0.11),
             background_normal='',
             background_color=(0.2, 0.5, 0.9, 1)
         )
-        self.qr_btn.bind(on_press=self.show_qr_popup)
-        main_layout.add_widget(self.qr_btn)
+        self.pay_btn.bind(on_press=self.show_payment_options)
+        main_layout.add_widget(self.pay_btn)
 
         Clock.schedule_interval(self.update_timer, 1.0)
         return main_layout
 
+    # 1 2 3 எண் பலகை பாப்-அப் (Direct Numpad Input)
+    def open_numpad(self, field_type):
+        self.numpad_target = field_type
+        self.numpad_val = ""
+
+        box = BoxLayout(orientation='vertical', padding=10, spacing=8)
+        self.num_preview = Label(text="0", font_size='28sp', bold=True, size_hint=(1, 0.25), color=(0.1, 1, 0.3, 1))
+        box.add_widget(self.num_preview)
+
+        keys_grid = GridLayout(cols=3, spacing=5, size_hint=(1, 0.6))
+        for key in ['1','2','3','4','5','6','7','8','9','C','0','.']:
+            b = Button(text=key, font_size='20sp', bold=True, background_normal='', background_color=(0.25, 0.28, 0.35, 1))
+            b.bind(on_press=self.numpad_click)
+            keys_grid.add_widget(b)
+        box.add_widget(keys_grid)
+
+        set_btn = Button(text="SET VALUE", font_size='18sp', bold=True, size_hint=(1, 0.15), background_normal='', background_color=(0.15, 0.68, 0.38, 1))
+        box.add_widget(set_btn)
+
+        self.numpad_pop = Popup(title=f"Set Rate for {field_type.upper()}", content=box, size_hint=(0.85, 0.65))
+        set_btn.bind(on_press=self.apply_numpad_value)
+        self.numpad_pop.open()
+
+    def numpad_click(self, instance):
+        k = instance.text
+        if k == 'C':
+            self.numpad_val = ""
+        else:
+            if k == '.' and '.' in self.numpad_val:
+                return
+            self.numpad_val += k
+        self.num_preview.text = self.numpad_val if self.numpad_val else "0"
+
+    def apply_numpad_value(self, instance):
+        if self.numpad_val:
+            val = float(self.numpad_val)
+            if self.numpad_target == 'base':
+                self.val_base = max(0.0, val)
+                self.b_btn.text = f"{int(self.val_base)}"
+                if not self.is_running:
+                    self.total_fare = self.val_base
+                    self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+            elif self.numpad_target == 'km':
+                self.val_km = max(0.0, val)
+                self.km_btn.text = f"{int(self.val_km)}"
+            elif self.numpad_target == 'wait':
+                self.val_wait = max(0.0, val)
+                self.w_btn.text = f"{self.val_wait:.1f}"
+            self.recalculate_fare()
+        self.numpad_pop.dismiss()
+
     def adjust_rate(self, kind, step):
         if kind == 'base':
             self.val_base = max(10.0, self.val_base + step)
-            self.b_lbl.text = f"{int(self.val_base)}"
+            self.b_btn.text = f"{int(self.val_base)}"
             if not self.is_running:
                 self.total_fare = self.val_base
                 self.fare_display.text = f"Rs. {self.total_fare:.2f}"
         elif kind == 'km':
             self.val_km = max(5.0, self.val_km + step)
-            self.km_lbl.text = f"{int(self.val_km)}"
+            self.km_btn.text = f"{int(self.val_km)}"
         elif kind == 'wait':
             self.val_wait = max(0.5, self.val_wait + step)
-            self.w_lbl.text = f"{self.val_wait:.1f}"
+            self.w_btn.text = f"{self.val_wait:.1f}"
+        self.recalculate_fare()
 
     def toggle_meter(self, instance):
         if not self.is_running:
@@ -201,7 +256,7 @@ class TaxiMeterApp(App):
             self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
             self.wait_btn.text = "WAIT ON"
             self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
-            self.show_qr_popup(None)
+            self.show_payment_options(None)
 
     def toggle_waiting(self, instance):
         if self.is_running:
@@ -229,75 +284,5 @@ class TaxiMeterApp(App):
         self.fare_display.text = f"Rs. {self.total_fare:.2f}"
         self.km_display.text = "0.00 KM"
         self.time_display.text = "00:00"
-        self.wait_display.text = "00:00"
-
-    def recalculate_fare(self):
-        base_km = 1.8
-        distance_cost = 0.0
-        if self.distance_km > base_km:
-            distance_cost = (self.distance_km - base_km) * self.val_km
-
-        waiting_cost = (self.wait_seconds / 60.0) * self.val_wait
-        self.total_fare = self.val_base + distance_cost + waiting_cost
-        self.fare_display.text = f"Rs. {self.total_fare:.2f}"
-
-    def update_timer(self, dt):
-        if self.is_running:
-            self.trip_seconds += 1
-            t_min = self.trip_seconds // 60
-            t_sec = self.trip_seconds % 60
-            self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
-
-            if self.is_waiting:
-                self.wait_seconds += 1
-                w_min = self.wait_seconds // 60
-                w_sec = self.wait_seconds % 60
-                self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
-                self.recalculate_fare()
-
-    def show_qr_popup(self, instance):
-        final_amt = f"{self.total_fare:.2f}"
-        upi_url = f"upi://pay?pa={self.upi_id}&pn=AutoKanakku&am={final_amt}&cu=INR"
-
-        qr = qrcode.QRCode(box_size=8, border=2)
-        qr.add_data(upi_url)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        
-        qr_path = os.path.join(self.user_data_dir, "fare_qr.png")
-        img.save(qr_path)
-
-        popup_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
-        popup_layout.add_widget(Label(
-            text=f"Total Fare: Rs. {final_amt}",
-            font_size='22sp',
-            bold=True,
-            size_hint=(1, 0.15),
-            color=(0.1, 1, 0.3, 1)
-        ))
-        
-        qr_image = Image(source=qr_path, size_hint=(1, 0.7))
-        qr_image.reload()
-        popup_layout.add_widget(qr_image)
-
-        close_btn = Button(
-            text="CLOSE",
-            font_size='16sp',
-            bold=True,
-            size_hint=(1, 0.15),
-            background_normal='',
-            background_color=(0.85, 0.25, 0.2, 1)
-        )
-        popup_layout.add_widget(close_btn)
-
-        popup = Popup(
-            title="Scan & Pay UPI",
-            content=popup_layout,
-            size_hint=(0.9, 0.75),
-            auto_dismiss=False
-        )
-        close_btn.bind(on_press=popup.dismiss)
-        popup.open()
-
-if __name__ == '__main__':
-    TaxiMeterApp().run()
+        self.wait_display.text = "
+ 
