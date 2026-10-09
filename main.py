@@ -28,8 +28,9 @@ class TaxiMeterApp(App):
 
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
+                # தலைப்பு
         main_layout.add_widget(Label(
-            text="DIGITAL AUTO METER",
+            text="தமிழன் ஆட்டோ மீட்டர்",
             font_size='22sp',
             bold=True,
             size_hint=(1, 0.08),
