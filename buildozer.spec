@@ -1,10 +1,11 @@
 [app]
-title = Auto Kanakku
-package.name = autokanakku
-package.domain = org.sasi.kanakku
+title = Tamilan Auto Meter
+package.name = tamilanautometer
+package.domain = org.sasi.meter
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 version = 0.1
+icon.filename = icon.png
 requirements = python3,kivy,qrcode,pillow
 orientation = portrait
 fullscreen = 0
