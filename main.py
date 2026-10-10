@@ -10,7 +10,7 @@ from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.window import Window
 
-# வெள்ளை நிறப் பின்னணி
+# வெள்ளை பின்னணி
 Window.clearcolor = (1, 1, 1, 1)
 
 class TaxiMeterApp(App):
@@ -146,7 +146,7 @@ class TaxiMeterApp(App):
         btn_layout.add_widget(self.reset_btn)
         main_layout.add_widget(btn_layout)
 
-        # பணம் செலுத்தும் முறை
+        # கட்டண முறை பொத்தான்
         self.pay_btn = Button(
             text="PAYMENT OPTIONS (CASH / QR)",
             font_size='17sp',
@@ -284,7 +284,7 @@ class TaxiMeterApp(App):
             t_sec = self.trip_seconds % 60
             self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
 
-            # ஆட்டோ ஓடாத போது (Stop/Idle) வெயிட்டிங் டைம் தானாக இயங்குதல்
+            # ஆட்டோ ஓடாத போது வெயிட்டிங் நேரம் கணக்கிடுதல்
             if not self.is_moving:
                 self.is_waiting = True
                 self.wait_btn.text = "WAITING..."
@@ -362,5 +362,28 @@ class TaxiMeterApp(App):
             text=f"Total Fare: Rs. {final_amt}",
             font_size='22sp',
             bold=True,
-            size_hint=(1, 0.
+            size_hint=(1, 0.15),
+            color=(0.0, 0.6, 0.2, 1)
+        ))
+        
+        qr_image = Image(source=qr_path, size_hint=(1, 0.7))
+        qr_image.reload()
+        box.add_widget(qr_image)
+
+        close_btn = Button(
+            text="CLOSE",
+            font_size='16sp',
+            bold=True,
+            size_hint=(1, 0.15),
+            background_normal='',
+            background_color=(0.85, 0.25, 0.2, 1)
+        )
+        box.add_widget(close_btn)
+
+        pop = Popup(title="Scan UPI QR", content=box, size_hint=(0.9, 0.75))
+        close_btn.bind(on_press=pop.dismiss)
+        pop.open()
+
+if __name__ == '__main__':
+    TaxiMeterApp().run()
  
