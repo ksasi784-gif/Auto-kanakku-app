@@ -1,4 +1,5 @@
 import os
+import math
 import qrcode
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -9,6 +10,13 @@ from kivy.uix.image import Image
 from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.window import Window
+from kivy.utils import platform
+
+# GPS module (plyer)
+try:
+    from plyer import gps
+except Exception:
+    gps = None
 
 # வெள்ளை பின்னணி
 Window.clearcolor = (1, 1, 1, 1)
@@ -22,6 +30,10 @@ class TaxiMeterApp(App):
         self.wait_seconds = 0
         self.distance_km = 0.0
         
+        # GPS முந்தைய ஆயத்தொலைவுகள் (Coordinates)
+        self.last_lat = None
+        self.last_lon = None
+
         self.val_base = 35.0
         self.val_km = 18.0
         self.val_wait = 1.5
@@ -158,8 +170,61 @@ class TaxiMeterApp(App):
         self.pay_btn.bind(on_press=self.show_payment_options)
         main_layout.add_widget(self.pay_btn)
 
+        # GPS அமைப்பு தொடங்குதல்
+        self.init_gps()
+
         Clock.schedule_interval(self.update_timer, 1.0)
         return main_layout
+
+    def init_gps(self):
+        if platform == 'android':
+            try:
+                from android.permissions import request_permissions, Permission
+                request_permissions([Permission.ACCESS_FINE_LOCATION, Permission.ACCESS_COARSE_LOCATION])
+            except Exception:
+                pass
+        if gps:
+            try:
+                gps.configure(on_location=self.on_gps_location)
+            except Exception:
+                pass
+
+    def on_gps_location(self, **kwargs):
+        if not self.is_running:
+            return
+
+        lat = kwargs.get('lat')
+        lon = kwargs.get('lon')
+        speed = kwargs.get('speed', 0.0)
+
+        if speed is None:
+            speed = 0.0
+
+        # வண்டி 2 km/h-க்கு மேல் நகர்ந்தால் Moving
+        self.is_moving = speed > 0.5
+
+        if self.last_lat is not None and self.last_lon is not None:
+            dist = self.calculate_distance(self.last_lat, self.last_lon, lat, lon)
+            # சிறிய GPS சிக்னல் பிழைகளைத் தவிர்க்க (> 5 மீட்டருக்கு மேல் நகர்ந்தால் மட்டும் கணக்கிடப்படும்)
+            if dist > 0.005:
+                self.distance_km += dist
+                self.km_display.text = f"{self.distance_km:.2f} KM"
+                self.recalculate_fare()
+                self.is_moving = True
+
+        self.last_lat = lat
+        self.last_lon = lon
+
+    def calculate_distance(self, lat1, lon1, lat2, lon2):
+        # Haversine ஃபார்முலா (கி.மீட்டரில் தூரம் கணக்கிட)
+        r = 6371.0
+        d_lat = math.radians(lat2 - lat1)
+        d_lon = math.radians(lon2 - lon1)
+        a = (math.sin(d_lat / 2) ** 2 +
+             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+             math.sin(d_lon / 2) ** 2)
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return r * c
 
     def open_keypad(self, target):
         self.kp_target = target
@@ -227,15 +292,28 @@ class TaxiMeterApp(App):
     def toggle_meter(self, instance):
         if not self.is_running:
             self.is_running = True
+            self.last_lat = None
+            self.last_lon = None
             self.start_btn.text = "STOP"
             self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
+            if gps:
+                try:
+                    gps.start(1000, 1)  # 1 வினாடி அல்லது 1 மீட்டர் இடைவெளியில் அப்டேட்
+                except Exception:
+                    pass
         else:
             self.is_running = False
             self.is_waiting = False
+            self.is_moving = False
             self.start_btn.text = "START"
             self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
             self.wait_btn.text = "AUTO WAIT"
             self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+            if gps:
+                try:
+                    gps.stop()
+                except Exception:
+                    pass
             self.show_payment_options(None)
 
     def toggle_waiting(self, instance):
@@ -255,6 +333,14 @@ class TaxiMeterApp(App):
         self.trip_seconds = 0
         self.wait_seconds = 0
         self.distance_km = 0.0
+        self.last_lat = None
+        self.last_lon = None
+
+        if gps:
+            try:
+                gps.stop()
+            except Exception:
+                pass
 
         self.start_btn.text = "START"
         self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
@@ -284,7 +370,7 @@ class TaxiMeterApp(App):
             t_sec = self.trip_seconds % 60
             self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
 
-            # ஆட்டோ ஓடாத போது வெயிட்டிங் நேரம் கணக்கிடுதல்
+            # ஆட்டோ ஓடாத போது (Stop/Idle) வெயிட்டிங் டைம் தானாக இயங்குதல்
             if not self.is_moving:
                 self.is_waiting = True
                 self.wait_btn.text = "WAITING..."
@@ -386,4 +472,3 @@ class TaxiMeterApp(App):
 
 if __name__ == '__main__':
     TaxiMeterApp().run()
- 
