@@ -10,7 +10,7 @@ from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.window import Window
 
-# வெள்ளை நிற பின்னணி (White Background)
+# வெள்ளை நிறப் பின்னணி
 Window.clearcolor = (1, 1, 1, 1)
 
 class TaxiMeterApp(App):
@@ -39,7 +39,7 @@ class TaxiMeterApp(App):
             color=(0.1, 0.1, 0.1, 1)
         ))
 
-        # ரேட் கண்ட்ரோல் (+, -, தொட்டு மாற்றும் வசதி)
+        # ரேட் கண்ட்ரோல்
         settings_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=8)
         minus_col = (0.85, 0.25, 0.2, 1)
         plus_col = (0.15, 0.55, 0.85, 1)
@@ -101,7 +101,7 @@ class TaxiMeterApp(App):
             text=f"Rs. {self.total_fare:.2f}",
             font_size='54sp',
             bold=True,
-            color=(0.0, 0.6, 0.2, 1)  # தெளிவான அடர் பச்சை
+            color=(0.0, 0.6, 0.2, 1)
         )
         fare_box.add_widget(self.fare_display)
         main_layout.add_widget(fare_box)
@@ -146,7 +146,7 @@ class TaxiMeterApp(App):
         btn_layout.add_widget(self.reset_btn)
         main_layout.add_widget(btn_layout)
 
-        # கட்டண முறை பொத்தான்
+        # பணம் செலுத்தும் முறை
         self.pay_btn = Button(
             text="PAYMENT OPTIONS (CASH / QR)",
             font_size='17sp',
@@ -239,5 +239,128 @@ class TaxiMeterApp(App):
             self.show_payment_options(None)
 
     def toggle_waiting(self, instance):
-        if
+        if self.is_running:
+            self.is_waiting = not self.is_waiting
+            if self.is_waiting:
+                self.wait_btn.text = "WAITING..."
+                self.wait_btn.background_color = (0.3, 0.3, 0.8, 1)
+            else:
+                self.wait_btn.text = "AUTO WAIT"
+                self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+
+    def reset_meter(self, instance):
+        self.is_running = False
+        self.is_waiting = False
+        self.is_moving = False
+        self.trip_seconds = 0
+        self.wait_seconds = 0
+        self.distance_km = 0.0
+
+        self.start_btn.text = "START"
+        self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
+        self.wait_btn.text = "AUTO WAIT"
+        self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+
+        self.total_fare = self.val_base
+        self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+        self.km_display.text = "0.00 KM"
+        self.time_display.text = "00:00"
+        self.wait_display.text = "00:00"
+
+    def recalculate_fare(self):
+        base_km = 1.8
+        distance_cost = 0.0
+        if self.distance_km > base_km:
+            distance_cost = (self.distance_km - base_km) * self.val_km
+
+        waiting_cost = (self.wait_seconds / 60.0) * self.val_wait
+        self.total_fare = self.val_base + distance_cost + waiting_cost
+        self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+
+    def update_timer(self, dt):
+        if self.is_running:
+            self.trip_seconds += 1
+            t_min = self.trip_seconds // 60
+            t_sec = self.trip_seconds % 60
+            self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
+
+            # ஆட்டோ ஓடாத போது (Stop/Idle) வெயிட்டிங் டைம் தானாக இயங்குதல்
+            if not self.is_moving:
+                self.is_waiting = True
+                self.wait_btn.text = "WAITING..."
+                self.wait_btn.background_color = (0.3, 0.3, 0.8, 1)
+                
+                self.wait_seconds += 1
+                w_min = self.wait_seconds // 60
+                w_sec = self.wait_seconds % 60
+                self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
+                self.recalculate_fare()
+            else:
+                if self.is_waiting:
+                    self.is_waiting = False
+                    self.wait_btn.text = "AUTO WAIT"
+                    self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+
+    def show_payment_options(self, instance):
+        final_amt = f"{self.total_fare:.2f}"
+        box = BoxLayout(orientation='vertical', padding=15, spacing=15)
+
+        box.add_widget(Label(
+            text=f"Total Fare: Rs. {final_amt}",
+            font_size='24sp',
+            bold=True,
+            size_hint=(1, 0.3),
+            color=(0.0, 0.6, 0.2, 1)
+        ))
+
+        btn_row = BoxLayout(orientation='horizontal', spacing=10, size_hint=(1, 0.45))
+        
+        cash_btn = Button(text="CASH PAYMENT", font_size='16sp', bold=True, background_normal='', background_color=(0.15, 0.68, 0.38, 1))
+        cash_btn.bind(on_press=self.pay_cash)
+
+        qr_opt_btn = Button(text="ONLINE UPI QR", font_size='16sp', bold=True, background_normal='', background_color=(0.2, 0.5, 0.9, 1))
+        qr_opt_btn.bind(on_press=self.show_qr)
+
+        btn_row.add_widget(cash_btn)
+        btn_row.add_widget(qr_opt_btn)
+        box.add_widget(btn_row)
+
+        close_btn = Button(text="CLOSE", font_size='16sp', bold=True, size_hint=(1, 0.25), background_normal='', background_color=(0.85, 0.25, 0.2, 1))
+        box.add_widget(close_btn)
+
+        self.pay_pop = Popup(title="Select Payment Method", content=box, size_hint=(0.9, 0.45))
+        close_btn.bind(on_press=self.pay_pop.dismiss)
+        self.pay_pop.open()
+
+    def pay_cash(self, inst):
+        self.pay_pop.dismiss()
+        box = BoxLayout(orientation='vertical', padding=15, spacing=10)
+        box.add_widget(Label(text=f"Cash Collected: Rs. {self.total_fare:.2f}\nTrip Finished!", font_size='20sp', bold=True, halign='center', color=(0.1, 0.1, 0.1, 1)))
+        ok = Button(text="DONE", font_size='18sp', bold=True, size_hint=(1, 0.35), background_normal='', background_color=(0.15, 0.68, 0.38, 1))
+        box.add_widget(ok)
+        p = Popup(title="Cash Mode", content=box, size_hint=(0.85, 0.35))
+        ok.bind(on_press=p.dismiss)
+        p.open()
+
+    def show_qr(self, inst):
+        if hasattr(self, 'pay_pop'):
+            self.pay_pop.dismiss()
+
+        final_amt = f"{self.total_fare:.2f}"
+        upi_url = f"upi://pay?pa={self.upi_id}&pn=AutoKanakku&am={final_amt}&cu=INR"
+
+        qr = qrcode.QRCode(box_size=8, border=2)
+        qr.add_data(upi_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        qr_path = "fare_qr.png"
+        img.save(qr_path)
+
+        box = BoxLayout(orientation='vertical', padding=15, spacing=10)
+        box.add_widget(Label(
+            text=f"Total Fare: Rs. {final_amt}",
+            font_size='22sp',
+            bold=True,
+            size_hint=(1, 0.
  
