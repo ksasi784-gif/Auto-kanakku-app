@@ -28,9 +28,9 @@ class TaxiMeterApp(App):
 
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
-                # தலைப்பு
+        # தலைப்பு
         main_layout.add_widget(Label(
-            text="தமிழன் ஆட்டோ மீட்டர்",
+            text="TAMILAN AUTO METER",
             font_size='22sp',
             bold=True,
             size_hint=(1, 0.08),
@@ -48,7 +48,7 @@ class TaxiMeterApp(App):
         b_ctrl = BoxLayout(orientation='horizontal', spacing=2)
         b_m = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=minus_col)
         b_m.bind(on_press=lambda x: self.adjust_rate('base', -5))
-        self.b_btn = Button(text=f"{int(self.val_base)}", font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.18, 0.2, 0.25, 1))
+        self.b_btn = Button(text=str(int(self.val_base)), font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.18, 0.2, 0.25, 1))
         self.b_btn.bind(on_press=lambda x: self.open_keypad('base'))
         b_p = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=plus_col)
         b_p.bind(on_press=lambda x: self.adjust_rate('base', 5))
@@ -63,7 +63,7 @@ class TaxiMeterApp(App):
         km_ctrl = BoxLayout(orientation='horizontal', spacing=2)
         km_m = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=minus_col)
         km_m.bind(on_press=lambda x: self.adjust_rate('km', -1))
-        self.km_btn = Button(text=f"{int(self.val_km)}", font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.18, 0.2, 0.25, 1))
+        self.km_btn = Button(text=str(int(self.val_km)), font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.18, 0.2, 0.25, 1))
         self.km_btn.bind(on_press=lambda x: self.open_keypad('km'))
         km_p = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=plus_col)
         km_p.bind(on_press=lambda x: self.adjust_rate('km', 1))
@@ -144,7 +144,7 @@ class TaxiMeterApp(App):
         btn_layout.add_widget(self.reset_btn)
         main_layout.add_widget(btn_layout)
 
-        # CASH / QR விருப்பங்கள் பொத்தான்
+        # CASH / QR பொத்தான்
         self.pay_btn = Button(
             text="PAYMENT OPTIONS (CASH / QR)",
             font_size='17sp',
@@ -179,7 +179,7 @@ class TaxiMeterApp(App):
         save_btn.bind(on_press=self.kp_save)
         content.add_widget(save_btn)
 
-        self.kp_pop = Popup(title=f"Enter {target.upper()} Rate", content=content, size_hint=(0.85, 0.65))
+        self.kp_pop = Popup(title=f"Set {target.upper()}", content=content, size_hint=(0.85, 0.65))
         self.kp_pop.open()
 
     def kp_press(self, inst):
@@ -198,13 +198,13 @@ class TaxiMeterApp(App):
                 num = float(self.kp_text)
                 if self.kp_target == 'base':
                     self.val_base = max(0.0, num)
-                    self.b_btn.text = f"{int(self.val_base)}"
+                    self.b_btn.text = str(int(self.val_base))
                     if not self.is_running:
                         self.total_fare = self.val_base
                         self.fare_display.text = f"Rs. {self.total_fare:.2f}"
                 elif self.kp_target == 'km':
                     self.val_km = max(0.0, num)
-                    self.km_btn.text = f"{int(self.val_km)}"
+                    self.km_btn.text = str(int(self.val_km))
                 elif self.kp_target == 'wait':
                     self.val_wait = max(0.0, num)
                     self.w_btn.text = f"{self.val_wait:.1f}"
@@ -216,13 +216,13 @@ class TaxiMeterApp(App):
     def adjust_rate(self, kind, step):
         if kind == 'base':
             self.val_base = max(10.0, self.val_base + step)
-            self.b_btn.text = f"{int(self.val_base)}"
+            self.b_btn.text = str(int(self.val_base))
             if not self.is_running:
                 self.total_fare = self.val_base
                 self.fare_display.text = f"Rs. {self.total_fare:.2f}"
         elif kind == 'km':
             self.val_km = max(5.0, self.val_km + step)
-            self.km_btn.text = f"{int(self.val_km)}"
+            self.km_btn.text = str(int(self.val_km))
         elif kind == 'wait':
             self.val_wait = max(0.5, self.val_wait + step)
             self.w_btn.text = f"{self.val_wait:.1f}"
@@ -347,10 +347,35 @@ class TaxiMeterApp(App):
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
         
-        # நேரடி கேச் பாத்
         qr_path = "fare_qr.png"
         img.save(qr_path)
 
         box = BoxLayout(orientation='vertical', padding=15, spacing=10)
         box.add_widget(Label(
-            text=f"Total Fare: Rs
+            text=f"Total Fare: Rs. {final_amt}",
+            font_size='22sp',
+            bold=True,
+            size_hint=(1, 0.15),
+            color=(0.1, 1, 0.3, 1)
+        ))
+        
+        qr_image = Image(source=qr_path, size_hint=(1, 0.7))
+        qr_image.reload()
+        box.add_widget(qr_image)
+
+        close_btn = Button(
+            text="CLOSE",
+            font_size='16sp',
+            bold=True,
+            size_hint=(1, 0.15),
+            background_normal='',
+            background_color=(0.85, 0.25, 0.2, 1)
+        )
+        box.add_widget(close_btn)
+
+        pop = Popup(title="Scan UPI QR", content=box, size_hint=(0.9, 0.75))
+        close_btn.bind(on_press=pop.dismiss)
+        pop.open()
+
+if __name__ == '__main__':
+    TaxiMeterApp().run()
