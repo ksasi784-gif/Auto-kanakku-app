@@ -1,5 +1,8 @@
 import os
 import math
+import datetime
+import urllib.parse
+import webbrowser
 import qrcode
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -12,13 +15,11 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.utils import platform
 
-# GPS module (plyer)
 try:
     from plyer import gps
 except Exception:
     gps = None
 
-# வெள்ளை பின்னணி
 Window.clearcolor = (1, 1, 1, 1)
 
 class TaxiMeterApp(App):
@@ -30,29 +31,37 @@ class TaxiMeterApp(App):
         self.wait_seconds = 0
         self.distance_km = 0.0
         
-        # GPS முந்தைய ஆயத்தொலைவுகள் (Coordinates)
         self.last_lat = None
         self.last_lon = None
 
-        self.val_base = 35.0
-        self.val_km = 18.0
+        self.val_base = 70.0
+        self.val_km = 20.0
         self.val_wait = 1.5
+        self.base_km_limit = 1.5
         self.total_fare = self.val_base
         self.upi_id = "9698421798@kotak811"
 
-        main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
+        main_layout = BoxLayout(orientation='vertical', padding=12, spacing=8)
 
-        # தலைப்பு
-        main_layout.add_widget(Label(
+        # தலைப்பு மற்றும் நேரலை கடிகாரம்
+        header_box = BoxLayout(orientation='vertical', size_hint=(1, 0.11), spacing=2)
+        header_box.add_widget(Label(
             text="TAMILAN AUTO METER",
             font_size='22sp',
             bold=True,
-            size_hint=(1, 0.08),
             color=(0.1, 0.1, 0.1, 1)
         ))
+        self.clock_display = Label(
+            text=datetime.datetime.now().strftime("%d-%m-%Y | %I:%M:%S %p"),
+            font_size='14sp',
+            bold=True,
+            color=(0.35, 0.35, 0.35, 1)
+        )
+        header_box.add_widget(self.clock_display)
+        main_layout.add_widget(header_box)
 
         # ரேட் கண்ட்ரோல்
-        settings_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=8)
+        settings_grid = GridLayout(cols=3, size_hint=(1, 0.14), spacing=6)
         minus_col = (0.85, 0.25, 0.2, 1)
         plus_col = (0.15, 0.55, 0.85, 1)
 
@@ -107,11 +116,11 @@ class TaxiMeterApp(App):
         main_layout.add_widget(settings_grid)
 
         # மொத்தக் கட்டணம்
-        fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.23))
+        fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.22))
         fare_box.add_widget(Label(text="TOTAL FARE", font_size='15sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
         self.fare_display = Label(
             text=f"Rs. {self.total_fare:.2f}",
-            font_size='54sp',
+            font_size='52sp',
             bold=True,
             color=(0.0, 0.6, 0.2, 1)
         )
@@ -119,21 +128,21 @@ class TaxiMeterApp(App):
         main_layout.add_widget(fare_box)
 
         # அளவீடுகள்
-        metrics_grid = GridLayout(cols=3, size_hint=(1, 0.19), spacing=5)
+        metrics_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=5)
 
         d_sub = BoxLayout(orientation='vertical')
-        d_sub.add_widget(Label(text="DISTANCE", font_size='13sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
-        self.km_display = Label(text="0.00 KM", font_size='25sp', bold=True, color=(0.85, 0.55, 0.0, 1))
+        d_sub.add_widget(Label(text="DISTANCE", font_size='12sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
+        self.km_display = Label(text="0.00 KM", font_size='22sp', bold=True, color=(0.85, 0.55, 0.0, 1))
         d_sub.add_widget(self.km_display)
 
         t_sub = BoxLayout(orientation='vertical')
-        t_sub.add_widget(Label(text="TRIP TIME", font_size='13sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
-        self.time_display = Label(text="00:00", font_size='25sp', bold=True, color=(0.1, 0.5, 0.8, 1))
+        t_sub.add_widget(Label(text="TRIP TIME", font_size='12sp', bold=True, color=(0.1, 0.5, 0.8, 1)))
+        self.time_display = Label(text="00:00", font_size='22sp', bold=True, color=(0.1, 0.5, 0.8, 1))
         t_sub.add_widget(self.time_display)
 
         w_sub = BoxLayout(orientation='vertical')
-        w_sub.add_widget(Label(text="WAIT TIME", font_size='13sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
-        self.wait_display = Label(text="00:00", font_size='25sp', bold=True, color=(0.85, 0.2, 0.2, 1))
+        w_sub.add_widget(Label(text="WAIT TIME", font_size='12sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
+        self.wait_display = Label(text="00:00", font_size='22sp', bold=True, color=(0.85, 0.2, 0.2, 1))
         w_sub.add_widget(self.wait_display)
 
         metrics_grid.add_widget(d_sub)
@@ -142,7 +151,7 @@ class TaxiMeterApp(App):
         main_layout.add_widget(metrics_grid)
 
         # பொத்தான்கள்
-        btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.12), spacing=10)
+        btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.13), spacing=8)
 
         self.start_btn = Button(text="START", font_size='18sp', bold=True, background_normal='', background_color=(0.15, 0.68, 0.38, 1))
         self.start_btn.bind(on_press=self.toggle_meter)
@@ -158,21 +167,19 @@ class TaxiMeterApp(App):
         btn_layout.add_widget(self.reset_btn)
         main_layout.add_widget(btn_layout)
 
-        # கட்டண முறை பொத்தான்
+        # பில் மற்றும் கட்டண முறை
         self.pay_btn = Button(
-            text="PAYMENT OPTIONS (CASH / QR)",
-            font_size='17sp',
+            text="VIEW BILL & PAYMENT (SHARE / QR)",
+            font_size='16sp',
             bold=True,
-            size_hint=(1, 0.11),
+            size_hint=(1, 0.12),
             background_normal='',
             background_color=(0.2, 0.5, 0.9, 1)
         )
         self.pay_btn.bind(on_press=self.show_payment_options)
         main_layout.add_widget(self.pay_btn)
 
-        # GPS அமைப்பு தொடங்குதல்
         self.init_gps()
-
         Clock.schedule_interval(self.update_timer, 1.0)
         return main_layout
 
@@ -200,12 +207,10 @@ class TaxiMeterApp(App):
         if speed is None:
             speed = 0.0
 
-        # வண்டி 2 km/h-க்கு மேல் நகர்ந்தால் Moving
         self.is_moving = speed > 0.5
 
         if self.last_lat is not None and self.last_lon is not None:
             dist = self.calculate_distance(self.last_lat, self.last_lon, lat, lon)
-            # சிறிய GPS சிக்னல் பிழைகளைத் தவிர்க்க (> 5 மீட்டருக்கு மேல் நகர்ந்தால் மட்டும் கணக்கிடப்படும்)
             if dist > 0.005:
                 self.distance_km += dist
                 self.km_display.text = f"{self.distance_km:.2f} KM"
@@ -216,7 +221,6 @@ class TaxiMeterApp(App):
         self.last_lon = lon
 
     def calculate_distance(self, lat1, lon1, lat2, lon2):
-        # Haversine ஃபார்முலா (கி.மீட்டரில் தூரம் கணக்கிட)
         r = 6371.0
         d_lat = math.radians(lat2 - lat1)
         d_lon = math.radians(lon2 - lon1)
@@ -298,7 +302,7 @@ class TaxiMeterApp(App):
             self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
             if gps:
                 try:
-                    gps.start(1000, 1)  # 1 வினாடி அல்லது 1 மீட்டர் இடைவெளியில் அப்டேட்
+                    gps.start(1000, 1)
                 except Exception:
                     pass
         else:
@@ -354,23 +358,23 @@ class TaxiMeterApp(App):
         self.wait_display.text = "00:00"
 
     def recalculate_fare(self):
-        base_km = 1.8
         distance_cost = 0.0
-        if self.distance_km > base_km:
-            distance_cost = (self.distance_km - base_km) * self.val_km
+        if self.distance_km > self.base_km_limit:
+            distance_cost = (self.distance_km - self.base_km_limit) * self.val_km
 
         waiting_cost = (self.wait_seconds / 60.0) * self.val_wait
         self.total_fare = self.val_base + distance_cost + waiting_cost
         self.fare_display.text = f"Rs. {self.total_fare:.2f}"
 
     def update_timer(self, dt):
+        self.clock_display.text = datetime.datetime.now().strftime("%d-%m-%Y | %I:%M:%S %p")
+
         if self.is_running:
             self.trip_seconds += 1
             t_min = self.trip_seconds // 60
             t_sec = self.trip_seconds % 60
             self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
 
-            # ஆட்டோ ஓடாத போது (Stop/Idle) வெயிட்டிங் டைம் தானாக இயங்குதல்
             if not self.is_moving:
                 self.is_waiting = True
                 self.wait_btn.text = "WAITING..."
@@ -387,42 +391,76 @@ class TaxiMeterApp(App):
                     self.wait_btn.text = "AUTO WAIT"
                     self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
 
-    def show_payment_options(self, instance):
-        final_amt = f"{self.total_fare:.2f}"
-        box = BoxLayout(orientation='vertical', padding=15, spacing=15)
+    def get_bill_summary_text(self):
+        extra_km = max(0.0, self.distance_km - self.base_km_limit)
+        km_cost = extra_km * self.val_km
+        wait_cost = (self.wait_seconds / 60.0) * self.val_wait
+        now_time = datetime.datetime.now().strftime("%d-%m-%Y %I:%M %p")
 
+        bill = (
+            f"--- TAMILAN AUTO RECEIPT ---\n"
+            f"Date & Time: {now_time}\n"
+            f"Total Distance: {self.distance_km:.2f} KM\n"
+            f"Base Fare ({self.base_km_limit:.1f} KM): Rs. {self.val_base:.2f}\n"
+            f"Extra KM ({extra_km:.2f} KM @ Rs.{self.val_km}/KM): Rs. {km_cost:.2f}\n"
+            f"Waiting Time ({self.wait_seconds//60}m {self.wait_seconds%60}s): Rs. {wait_cost:.2f}\n"
+            f"---------------------------\n"
+            f"TOTAL FARE: Rs. {self.total_fare:.2f}\n"
+            f"UPI: {self.upi_id}\n"
+            f"Thank You! Safe Journey!"
+        )
+        return bill
+
+    def show_payment_options(self, instance):
+        bill_text = self.get_bill_summary_text()
+
+        box = BoxLayout(orientation='vertical', padding=12, spacing=8)
+        
+        # பில் விவரங்கள்
         box.add_widget(Label(
-            text=f"Total Fare: Rs. {final_amt}",
-            font_size='24sp',
+            text=bill_text,
+            font_size='13sp',
             bold=True,
-            size_hint=(1, 0.3),
-            color=(0.0, 0.6, 0.2, 1)
+            halign='left',
+            color=(0.1, 0.1, 0.1, 1),
+            size_hint=(1, 0.48)
         ))
 
-        btn_row = BoxLayout(orientation='horizontal', spacing=10, size_hint=(1, 0.45))
-        
-        cash_btn = Button(text="CASH PAYMENT", font_size='16sp', bold=True, background_normal='', background_color=(0.15, 0.68, 0.38, 1))
+        # பொத்தான்கள் வரிசை 1: Cash மற்றும் QR
+        row1 = BoxLayout(orientation='horizontal', spacing=8, size_hint=(1, 0.17))
+        cash_btn = Button(text="CASH PAYMENT", font_size='14sp', bold=True, background_normal='', background_color=(0.15, 0.68, 0.38, 1))
         cash_btn.bind(on_press=self.pay_cash)
+        qr_btn = Button(text="UPI QR CODE", font_size='14sp', bold=True, background_normal='', background_color=(0.2, 0.5, 0.9, 1))
+        qr_btn.bind(on_press=self.show_qr)
+        row1.add_widget(cash_btn)
+        row1.add_widget(qr_btn)
+        box.add_widget(row1)
 
-        qr_opt_btn = Button(text="ONLINE UPI QR", font_size='16sp', bold=True, background_normal='', background_color=(0.2, 0.5, 0.9, 1))
-        qr_opt_btn.bind(on_press=self.show_qr)
+        # பொத்தான்கள் வரிசை 2: WhatsApp Share மற்றும் Close
+        row2 = BoxLayout(orientation='horizontal', spacing=8, size_hint=(1, 0.17))
+        share_btn = Button(text="SHARE RECEIPT", font_size='14sp', bold=True, background_normal='', background_color=(0.1, 0.7, 0.4, 1))
+        share_btn.bind(on_press=self.share_receipt)
+        close_btn = Button(text="CLOSE", font_size='14sp', bold=True, background_normal='', background_color=(0.85, 0.25, 0.2, 1))
+        row2.add_widget(share_btn)
+        row2.add_widget(close_btn)
+        box.add_widget(row2)
 
-        btn_row.add_widget(cash_btn)
-        btn_row.add_widget(qr_opt_btn)
-        box.add_widget(btn_row)
-
-        close_btn = Button(text="CLOSE", font_size='16sp', bold=True, size_hint=(1, 0.25), background_normal='', background_color=(0.85, 0.25, 0.2, 1))
-        box.add_widget(close_btn)
-
-        self.pay_pop = Popup(title="Select Payment Method", content=box, size_hint=(0.9, 0.45))
+        self.pay_pop = Popup(title="Trip Bill & Payment", content=box, size_hint=(0.92, 0.65))
         close_btn.bind(on_press=self.pay_pop.dismiss)
         self.pay_pop.open()
+
+    def share_receipt(self, inst):
+        bill = self.get_bill_summary_text()
+        encoded = urllib.parse.quote(bill)
+        # வாட்ஸ்அப் அல்லது பிரவுசர் மூலம் பில்லை பகிர்தல்
+        url = f"https://api.whatsapp.com/send?text={encoded}"
+        webbrowser.open(url)
 
     def pay_cash(self, inst):
         self.pay_pop.dismiss()
         box = BoxLayout(orientation='vertical', padding=15, spacing=10)
-        box.add_widget(Label(text=f"Cash Collected: Rs. {self.total_fare:.2f}\nTrip Finished!", font_size='20sp', bold=True, halign='center', color=(0.1, 0.1, 0.1, 1)))
-        ok = Button(text="DONE", font_size='18sp', bold=True, size_hint=(1, 0.35), background_normal='', background_color=(0.15, 0.68, 0.38, 1))
+        box.add_widget(Label(text=f"Cash Collected: Rs. {self.total_fare:.2f}\nTrip Finished!", font_size='18sp', bold=True, halign='center', color=(0.1, 0.1, 0.1, 1)))
+        ok = Button(text="DONE", font_size='16sp', bold=True, size_hint=(1, 0.35), background_normal='', background_color=(0.15, 0.68, 0.38, 1))
         box.add_widget(ok)
         p = Popup(title="Cash Mode", content=box, size_hint=(0.85, 0.35))
         ok.bind(on_press=p.dismiss)
@@ -433,7 +471,7 @@ class TaxiMeterApp(App):
             self.pay_pop.dismiss()
 
         final_amt = f"{self.total_fare:.2f}"
-        upi_url = f"upi://pay?pa={self.upi_id}&pn=AutoKanakku&am={final_amt}&cu=INR"
+        upi_url = f"upi://pay?pa={self.upi_id}&pn=TamilanAuto&am={final_amt}&cu=INR"
 
         qr = qrcode.QRCode(box_size=8, border=2)
         qr.add_data(upi_url)
@@ -443,22 +481,22 @@ class TaxiMeterApp(App):
         qr_path = "fare_qr.png"
         img.save(qr_path)
 
-        box = BoxLayout(orientation='vertical', padding=15, spacing=10)
+        box = BoxLayout(orientation='vertical', padding=12, spacing=8)
         box.add_widget(Label(
             text=f"Total Fare: Rs. {final_amt}",
-            font_size='22sp',
+            font_size='20sp',
             bold=True,
-            size_hint=(1, 0.15),
+            size_hint=(1, 0.12),
             color=(0.0, 0.6, 0.2, 1)
         ))
         
-        qr_image = Image(source=qr_path, size_hint=(1, 0.7))
+        qr_image = Image(source=qr_path, size_hint=(1, 0.73))
         qr_image.reload()
         box.add_widget(qr_image)
 
         close_btn = Button(
             text="CLOSE",
-            font_size='16sp',
+            font_size='15sp',
             bold=True,
             size_hint=(1, 0.15),
             background_normal='',
@@ -472,3 +510,4 @@ class TaxiMeterApp(App):
 
 if __name__ == '__main__':
     TaxiMeterApp().run()
+ 
