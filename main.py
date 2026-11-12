@@ -1,4 +1,5 @@
 import os
+import json
 import math
 import datetime
 import urllib.parse
@@ -22,6 +23,8 @@ except Exception:
 
 Window.clearcolor = (1, 1, 1, 1)
 
+STATE_FILE = "meter_state.json"
+
 class TaxiMeterApp(App):
     def build(self):
         self.is_running = False
@@ -33,6 +36,7 @@ class TaxiMeterApp(App):
         
         self.last_lat = None
         self.last_lon = None
+        self.gps_initialized = False
 
         self.val_base = 70.0
         self.val_km = 20.0
@@ -180,8 +184,29 @@ class TaxiMeterApp(App):
         main_layout.add_widget(self.pay_btn)
 
         self.init_gps()
+        self.load_state()
         Clock.schedule_interval(self.update_timer, 1.0)
         return main_layout
+
+    def set_screen_wake(self, keep_on=True):
+        """ஆண்ட்ராய்டில் ஸ்கிரீன் ஆஃப் ஆகாமல் விழித்திருக்கச் செய்யும் வசதி"""
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                activity = PythonActivity.mActivity
+                FLAG_KEEP_SCREEN_ON = 128  # WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                
+                def apply_flag():
+                    window = activity.getWindow()
+                    if keep_on:
+                        window.addFlags(FLAG_KEEP_SCREEN_ON)
+                    else:
+                        window.clearFlags(FLAG_KEEP_SCREEN_ON)
+
+                activity.runOnUiThread(apply_flag)
+            except Exception:
+                pass
 
     def init_gps(self):
         if platform == 'android':
@@ -203,22 +228,32 @@ class TaxiMeterApp(App):
         lat = kwargs.get('lat')
         lon = kwargs.get('lon')
         speed = kwargs.get('speed', 0.0)
+        accuracy = kwargs.get('accuracy', 100.0)
+
+        if accuracy is not None and accuracy > 35.0:
+            return
 
         if speed is None:
             speed = 0.0
 
-        self.is_moving = speed > 0.5
+        self.is_moving = speed > 0.8
 
-        if self.last_lat is not None and self.last_lon is not None:
-            dist = self.calculate_distance(self.last_lat, self.last_lon, lat, lon)
-            if dist > 0.005:
-                self.distance_km += dist
-                self.km_display.text = f"{self.distance_km:.2f} KM"
-                self.recalculate_fare()
-                self.is_moving = True
+        if not self.gps_initialized or self.last_lat is None:
+            self.last_lat = lat
+            self.last_lon = lon
+            self.gps_initialized = True
+            return
 
-        self.last_lat = lat
-        self.last_lon = lon
+        dist = self.calculate_distance(self.last_lat, self.last_lon, lat, lon)
+        
+        if 0.010 <= dist <= 0.200:
+            self.distance_km += dist
+            self.km_display.text = f"{self.distance_km:.2f} KM"
+            self.recalculate_fare()
+            self.is_moving = True
+            self.last_lat = lat
+            self.last_lon = lon
+            self.save_state()
 
     def calculate_distance(self, lat1, lon1, lat2, lon2):
         r = 6371.0
@@ -277,6 +312,7 @@ class TaxiMeterApp(App):
                     self.val_wait = max(0.0, num)
                     self.w_btn.text = f"{self.val_wait:.1f}"
                 self.recalculate_fare()
+                self.save_state()
             except ValueError:
                 pass
         self.kp_pop.dismiss()
@@ -292,14 +328,17 @@ class TaxiMeterApp(App):
             self.val_wait = max(0.0, self.val_wait + step)
             self.w_btn.text = f"{self.val_wait:.1f}"
         self.recalculate_fare()
+        self.save_state()
 
     def toggle_meter(self, instance):
         if not self.is_running:
             self.is_running = True
             self.last_lat = None
             self.last_lon = None
+            self.gps_initialized = False
             self.start_btn.text = "STOP"
             self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
+            self.set_screen_wake(True)  # ஸ்கிரீன் எப்போதும் ஆன்-ல் இருக்கச் செய்தல்
             if gps:
                 try:
                     gps.start(1000, 1)
@@ -313,11 +352,13 @@ class TaxiMeterApp(App):
             self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
             self.wait_btn.text = "AUTO WAIT"
             self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+            self.set_screen_wake(False)  # ஸ்கிரீனை இயல்பு நிலைக்கு மாற்றுதல்
             if gps:
                 try:
                     gps.stop()
                 except Exception:
                     pass
+            self.save_state()
             self.show_payment_options(None)
 
     def toggle_waiting(self, instance):
@@ -339,6 +380,9 @@ class TaxiMeterApp(App):
         self.distance_km = 0.0
         self.last_lat = None
         self.last_lon = None
+        self.gps_initialized = False
+
+        self.set_screen_wake(False)
 
         if gps:
             try:
@@ -356,6 +400,12 @@ class TaxiMeterApp(App):
         self.km_display.text = "0.00 KM"
         self.time_display.text = "00:00"
         self.wait_display.text = "00:00"
+
+        if os.path.exists(STATE_FILE):
+            try:
+                os.remove(STATE_FILE)
+            except Exception:
+                pass
 
     def recalculate_fare(self):
         distance_cost = 0.0
@@ -391,6 +441,65 @@ class TaxiMeterApp(App):
                     self.wait_btn.text = "AUTO WAIT"
                     self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
 
+            if self.trip_seconds % 3 == 0:
+                self.save_state()
+
+    def save_state(self):
+        data = {
+            'is_running': self.is_running,
+            'trip_seconds': self.trip_seconds,
+            'wait_seconds': self.wait_seconds,
+            'distance_km': self.distance_km,
+            'total_fare': self.total_fare,
+            'val_base': self.val_base,
+            'val_km': self.val_km,
+            'val_wait': self.val_wait
+        }
+        try:
+            with open(STATE_FILE, 'w') as f:
+                json.dump(data, f)
+        except Exception:
+            pass
+
+    def load_state(self):
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, 'r') as f:
+                    data = json.load(f)
+                self.is_running = data.get('is_running', False)
+                self.trip_seconds = data.get('trip_seconds', 0)
+                self.wait_seconds = data.get('wait_seconds', 0)
+                self.distance_km = data.get('distance_km', 0.0)
+                self.total_fare = data.get('total_fare', self.val_base)
+                self.val_base = data.get('val_base', 70.0)
+                self.val_km = data.get('val_km', 20.0)
+                self.val_wait = data.get('val_wait', 1.5)
+
+                self.b_btn.text = str(int(self.val_base))
+                self.km_btn.text = str(int(self.val_km))
+                self.w_btn.text = f"{self.val_wait:.1f}"
+
+                self.km_display.text = f"{self.distance_km:.2f} KM"
+                self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+                t_min = self.trip_seconds // 60
+                t_sec = self.trip_seconds % 60
+                self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
+                w_min = self.wait_seconds // 60
+                w_sec = self.wait_seconds % 60
+                self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
+
+                if self.is_running:
+                    self.start_btn.text = "STOP"
+                    self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
+                    self.set_screen_wake(True)
+                    if gps:
+                        try:
+                            gps.start(1000, 1)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
     def get_bill_summary_text(self):
         extra_km = max(0.0, self.distance_km - self.base_km_limit)
         km_cost = extra_km * self.val_km
@@ -416,7 +525,6 @@ class TaxiMeterApp(App):
 
         box = BoxLayout(orientation='vertical', padding=12, spacing=8)
         
-        # பில் விவரங்கள்
         box.add_widget(Label(
             text=bill_text,
             font_size='13sp',
@@ -426,7 +534,6 @@ class TaxiMeterApp(App):
             size_hint=(1, 0.48)
         ))
 
-        # பொத்தான்கள் வரிசை 1: Cash மற்றும் QR
         row1 = BoxLayout(orientation='horizontal', spacing=8, size_hint=(1, 0.17))
         cash_btn = Button(text="CASH PAYMENT", font_size='14sp', bold=True, background_normal='', background_color=(0.15, 0.68, 0.38, 1))
         cash_btn.bind(on_press=self.pay_cash)
@@ -436,7 +543,6 @@ class TaxiMeterApp(App):
         row1.add_widget(qr_btn)
         box.add_widget(row1)
 
-        # பொத்தான்கள் வரிசை 2: WhatsApp Share மற்றும் Close
         row2 = BoxLayout(orientation='horizontal', spacing=8, size_hint=(1, 0.17))
         share_btn = Button(text="SHARE RECEIPT", font_size='14sp', bold=True, background_normal='', background_color=(0.1, 0.7, 0.4, 1))
         share_btn.bind(on_press=self.share_receipt)
@@ -452,7 +558,6 @@ class TaxiMeterApp(App):
     def share_receipt(self, inst):
         bill = self.get_bill_summary_text()
         encoded = urllib.parse.quote(bill)
-        # வாட்ஸ்அப் அல்லது பிரவுசர் மூலம் பில்லை பகிர்தல்
         url = f"https://api.whatsapp.com/send?text={encoded}"
         webbrowser.open(url)
 
@@ -510,4 +615,3 @@ class TaxiMeterApp(App):
 
 if __name__ == '__main__':
     TaxiMeterApp().run()
- 
