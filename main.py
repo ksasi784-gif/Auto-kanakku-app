@@ -17,14 +17,47 @@ from kivy.core.window import Window
 from kivy.utils import platform
 from kivy.graphics import Color, RoundedRectangle
 
-try:
-    from plyer import gps
-except Exception:
-    gps = None
-
 Window.clearcolor = (1, 1, 1, 1)
 
 STATE_FILE = "meter_state.json"
+
+# ஆண்ட்ராய்டு நேரடி GPS லொகேஷன் லிசனர் (Pyjnius)
+if platform == 'android':
+    from jnius import autoclass, PythonJavaClass, java_method
+    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+    Context = autoclass('android.content.Context')
+    LocationManager = autoclass('android.location.LocationManager')
+    Looper = autoclass('android.os.Looper')
+
+    class AndroidLocationListener(PythonJavaClass):
+        __javainterfaces__ = ['android/location/LocationListener']
+        __javacontext__ = 'app'
+
+        def __init__(self, callback):
+            super().__init__()
+            self.callback = callback
+
+        @java_method('(Landroid/location/Location;)V')
+        def onLocationChanged(self, location):
+            if location is not None:
+                lat = location.getLatitude()
+                lon = location.getLongitude()
+                speed = location.getSpeed() if location.hasSpeed() else 0.0
+                accuracy = location.getAccuracy() if location.hasAccuracy() else 50.0
+                Clock.schedule_once(lambda dt: self.callback(lat, lon, speed, accuracy), 0)
+
+        @java_method('(Ljava/lang/String;ILandroid/os/Bundle;)V')
+        def onStatusChanged(self, provider, status, extras):
+            pass
+
+        @java_method('(Ljava/lang/String;)V')
+        def onProviderEnabled(self, provider):
+            pass
+
+        @java_method('(Ljava/lang/String;)V')
+        def onProviderDisabled(self, provider):
+            pass
+
 
 class TaxiMeterApp(App):
     def build(self):
@@ -38,6 +71,8 @@ class TaxiMeterApp(App):
         self.last_lat = None
         self.last_lon = None
         self.gps_lock_count = 0
+        self.loc_manager = None
+        self.loc_listener = None
 
         self.val_base = 70.0
         self.val_km = 25.0
@@ -223,18 +258,14 @@ class TaxiMeterApp(App):
     def set_screen_wake(self, keep_on=True):
         if platform == 'android':
             try:
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 activity = PythonActivity.mActivity
                 FLAG_KEEP_SCREEN_ON = 128
-                
                 def apply_flag():
                     window = activity.getWindow()
                     if keep_on:
                         window.addFlags(FLAG_KEEP_SCREEN_ON)
                     else:
                         window.clearFlags(FLAG_KEEP_SCREEN_ON)
-
                 activity.runOnUiThread(apply_flag)
             except Exception:
                 pass
@@ -244,32 +275,58 @@ class TaxiMeterApp(App):
             try:
                 from android.permissions import request_permissions, Permission
                 request_permissions([Permission.ACCESS_FINE_LOCATION, Permission.ACCESS_COARSE_LOCATION])
-            except Exception:
-                pass
-        if gps:
-            try:
-                gps.configure(on_location=self.on_gps_location)
+                activity = PythonActivity.mActivity
+                self.loc_manager = activity.getSystemService(Context.LOCATION_SERVICE)
+                self.loc_listener = AndroidLocationListener(self.on_gps_location)
             except Exception:
                 pass
 
-    def on_gps_location(self, **kwargs):
+    def start_android_gps(self):
+        if platform == 'android' and self.loc_manager and self.loc_listener:
+            try:
+                activity = PythonActivity.mActivity
+                def req_updates():
+                    try:
+                        # 1 வினாடி (1000ms) மற்றும் 0 மீட்டர் இடைவெளியில் GPS சிக்னல் பெறுதல்
+                        self.loc_manager.requestLocationUpdates(
+                            LocationManager.GPS_PROVIDER, 1000, 0.0, self.loc_listener, Looper.getMainLooper()
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        # GPS சிக்னல் குறைவாக இருந்தால் Network Provider உதவியும் பெறுதல்
+                        self.loc_manager.requestLocationUpdates(
+                            LocationManager.NETWORK_PROVIDER, 2000, 0.0, self.loc_listener, Looper.getMainLooper()
+                        )
+                    except Exception:
+                        pass
+                activity.runOnUiThread(req_updates)
+            except Exception:
+                pass
+
+    def stop_android_gps(self):
+        if platform == 'android' and self.loc_manager and self.loc_listener:
+            try:
+                activity = PythonActivity.mActivity
+                def rem_updates():
+                    try:
+                        self.loc_manager.removeUpdates(self.loc_listener)
+                    except Exception:
+                        pass
+                activity.runOnUiThread(rem_updates)
+            except Exception:
+                pass
+
+    def on_gps_location(self, lat, lon, speed, accuracy):
         if not self.is_running:
             return
-
-        lat = kwargs.get('lat')
-        lon = kwargs.get('lon')
-        speed = kwargs.get('speed', 0.0)
-        accuracy = kwargs.get('accuracy', 50.0)
 
         if lat is None or lon is None:
             return
 
-        # 100 மீட்டருக்கு மேல் பிழை உள்ள சிக்னல்களை மட்டும் தவிர்த்தல்
-        if accuracy is not None and accuracy > 100.0:
+        # 120 மீட்டருக்கு மேல் மிகத் தவறான சிக்னல்களை மட்டும் தவிர்த்தல்
+        if accuracy is not None and accuracy > 120.0:
             return
-
-        if speed is None:
-            speed = 0.0
 
         # முதல் சிக்னலை ஆரம்ப புள்ளியாகப் பதிவு செய்தல் (ஆரம்ப 500m பிழையைத் தடுக்க)
         if self.gps_lock_count == 0 or self.last_lat is None:
@@ -280,8 +337,8 @@ class TaxiMeterApp(App):
 
         dist = self.calculate_distance(self.last_lat, self.last_lon, lat, lon)
 
-        # 3 மீட்டர் (0.003 km) முதல் 500 மீட்டர் (0.500 km) வரையிலான நகர்வைக் கணக்கிடுதல்
-        if 0.003 <= dist <= 0.500:
+        # 2 km/h வேகம் = 0.55 m/s -> 1.5 மீட்டர் (0.0015 km) நகர்ந்தாலே உடனே கணக்கிடுதல்
+        if 0.0015 <= dist <= 0.500:
             self.distance_km += dist
             self.km_display.text = f"{self.distance_km:.2f} KM"
             self.recalculate_fare()
@@ -289,9 +346,8 @@ class TaxiMeterApp(App):
             self.last_lat = lat
             self.last_lon = lon
             self.save_state()
-        else:
-            # வேகம் 0.5 m/s-க்கு மேல் இருந்தால் நகர்வதாகக் கொள்ளுதல்
-            self.is_moving = speed > 0.5
+        elif speed >= 0.45:  # 1.6 km/h-க்கு மேல் வேகம் இருந்தாலே நகர்வதாகக் கொள்ளுதல்
+            self.is_moving = True
 
     def calculate_distance(self, lat1, lon1, lat2, lon2):
         r = 6371.0
@@ -377,11 +433,7 @@ class TaxiMeterApp(App):
             self.start_btn.text = "STOP"
             self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
             self.set_screen_wake(True)
-            if gps:
-                try:
-                    gps.start(1000, 1)
-                except Exception:
-                    pass
+            self.start_android_gps()
         else:
             self.is_running = False
             self.is_waiting = False
@@ -391,11 +443,7 @@ class TaxiMeterApp(App):
             self.wait_btn.text = "AUTO WAIT"
             self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
             self.set_screen_wake(False)
-            if gps:
-                try:
-                    gps.stop()
-                except Exception:
-                    pass
+            self.stop_android_gps()
             self.save_state()
             self.show_payment_options(None)
 
@@ -421,12 +469,7 @@ class TaxiMeterApp(App):
         self.gps_lock_count = 0
 
         self.set_screen_wake(False)
-
-        if gps:
-            try:
-                gps.stop()
-            except Exception:
-                pass
+        self.stop_android_gps()
 
         self.start_btn.text = "START"
         self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
@@ -479,7 +522,6 @@ class TaxiMeterApp(App):
                     self.wait_btn.text = "AUTO WAIT"
                     self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
 
-            # 3 வினாடிகள் நகர்வு இல்லையெனில் மீண்டும் வெயிட்டிங் நிலைக்கு மாற்றுதல்
             self.is_moving = False
 
             if self.trip_seconds % 3 == 0:
@@ -533,11 +575,7 @@ class TaxiMeterApp(App):
                     self.start_btn.text = "STOP"
                     self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
                     self.set_screen_wake(True)
-                    if gps:
-                        try:
-                            gps.start(1000, 1)
-                        except Exception:
-                            pass
+                    self.start_android_gps()
             except Exception:
                 pass
 
