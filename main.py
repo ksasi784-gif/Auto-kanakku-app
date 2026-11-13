@@ -15,6 +15,7 @@ from kivy.uix.popup import Popup
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.utils import platform
+from kivy.graphics import Color, RoundedRectangle, Rectangle
 
 try:
     from plyer import gps
@@ -39,30 +40,66 @@ class TaxiMeterApp(App):
         self.gps_initialized = False
 
         self.val_base = 70.0
-        self.val_km = 20.0
-        self.val_wait = 1.5
+        self.val_km = 25.0
+        self.val_wait = 1.8
         self.base_km_limit = 1.5
         self.total_fare = self.val_base
         self.upi_id = "9698421798@kotak811"
 
         main_layout = BoxLayout(orientation='vertical', padding=12, spacing=8)
 
-        # தலைப்பு மற்றும் நேரலை கடிகாரம்
-        header_box = BoxLayout(orientation='vertical', size_hint=(1, 0.11), spacing=2)
-        header_box.add_widget(Label(
+        # --- டிசைன் செய்யப்பட்ட தலைப்பு பேனர் (Styled Auto Header Banner) ---
+        header_banner = BoxLayout(
+            orientation='horizontal',
+            size_hint=(1, 0.13),
+            padding=[10, 6, 10, 6],
+            spacing=10
+        )
+        
+        with header_banner.canvas.before:
+            # கருப்பு நிற வெளிப்புற பார்டர்
+            Color(0.1, 0.1, 0.1, 1)
+            self.banner_border = RoundedRectangle(pos=header_banner.pos, size=header_banner.size, radius=[14])
+            # ஆட்டோ மஞ்சள் நிற உள்பின்னணி (Auto Yellow)
+            Color(1.0, 0.78, 0.05, 1)
+            self.banner_bg = RoundedRectangle(
+                pos=(header_banner.x + 2, header_banner.y + 2),
+                size=(header_banner.width - 4, header_banner.height - 4),
+                radius=[12]
+            )
+
+        def update_banner_rect(instance, value):
+            self.banner_border.pos = instance.pos
+            self.banner_border.size = instance.size
+            self.banner_bg.pos = (instance.x + 2.5, instance.y + 2.5)
+            self.banner_bg.size = (instance.width - 5, instance.height - 5)
+
+        header_banner.bind(pos=update_banner_rect, size=update_banner_rect)
+
+        # இடது பக்கம்: ஆப் லோகோ (icon.png இருந்தால் காட்டும்)
+        if os.path.exists("icon.png"):
+            logo_img = Image(source="icon.png", size_hint=(0.2, 1))
+            header_banner.add_widget(logo_img)
+
+        # வலது பக்கம்: தலைப்பு மற்றும் நேரலை கடிகாரம்
+        title_col = BoxLayout(orientation='vertical', spacing=2)
+        title_col.add_widget(Label(
             text="TAMILAN AUTO METER",
-            font_size='22sp',
+            font_size='20sp',
             bold=True,
-            color=(0.1, 0.1, 0.1, 1)
+            color=(0.08, 0.08, 0.08, 1)
         ))
         self.clock_display = Label(
             text=datetime.datetime.now().strftime("%d-%m-%Y | %I:%M:%S %p"),
-            font_size='14sp',
+            font_size='13sp',
             bold=True,
-            color=(0.35, 0.35, 0.35, 1)
+            color=(0.2, 0.2, 0.2, 1)
         )
-        header_box.add_widget(self.clock_display)
-        main_layout.add_widget(header_box)
+        title_col.add_widget(self.clock_display)
+        header_banner.add_widget(title_col)
+
+        main_layout.add_widget(header_banner)
+        # -------------------------------------------------------------------
 
         # ரேட் கண்ட்ரோல்
         settings_grid = GridLayout(cols=3, size_hint=(1, 0.14), spacing=6)
@@ -120,7 +157,7 @@ class TaxiMeterApp(App):
         main_layout.add_widget(settings_grid)
 
         # மொத்தக் கட்டணம்
-        fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.22))
+        fare_box = BoxLayout(orientation='vertical', size_hint=(1, 0.21))
         fare_box.add_widget(Label(text="TOTAL FARE", font_size='15sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
         self.fare_display = Label(
             text=f"Rs. {self.total_fare:.2f}",
@@ -132,7 +169,7 @@ class TaxiMeterApp(App):
         main_layout.add_widget(fare_box)
 
         # அளவீடுகள்
-        metrics_grid = GridLayout(cols=3, size_hint=(1, 0.16), spacing=5)
+        metrics_grid = GridLayout(cols=3, size_hint=(1, 0.15), spacing=5)
 
         d_sub = BoxLayout(orientation='vertical')
         d_sub.add_widget(Label(text="DISTANCE", font_size='12sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
@@ -189,13 +226,12 @@ class TaxiMeterApp(App):
         return main_layout
 
     def set_screen_wake(self, keep_on=True):
-        """ஆண்ட்ராய்டில் ஸ்கிரீன் ஆஃப் ஆகாமல் விழித்திருக்கச் செய்யும் வசதி"""
         if platform == 'android':
             try:
                 from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 activity = PythonActivity.mActivity
-                FLAG_KEEP_SCREEN_ON = 128  # WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                FLAG_KEEP_SCREEN_ON = 128
                 
                 def apply_flag():
                     window = activity.getWindow()
@@ -338,7 +374,7 @@ class TaxiMeterApp(App):
             self.gps_initialized = False
             self.start_btn.text = "STOP"
             self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
-            self.set_screen_wake(True)  # ஸ்கிரீன் எப்போதும் ஆன்-ல் இருக்கச் செய்தல்
+            self.set_screen_wake(True)
             if gps:
                 try:
                     gps.start(1000, 1)
@@ -352,7 +388,7 @@ class TaxiMeterApp(App):
             self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
             self.wait_btn.text = "AUTO WAIT"
             self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
-            self.set_screen_wake(False)  # ஸ்கிரீனை இயல்பு நிலைக்கு மாற்றுதல்
+            self.set_screen_wake(False)
             if gps:
                 try:
                     gps.stop()
@@ -472,8 +508,8 @@ class TaxiMeterApp(App):
                 self.distance_km = data.get('distance_km', 0.0)
                 self.total_fare = data.get('total_fare', self.val_base)
                 self.val_base = data.get('val_base', 70.0)
-                self.val_km = data.get('val_km', 20.0)
-                self.val_wait = data.get('val_wait', 1.5)
+                self.val_km = data.get('val_km', 25.0)
+                self.val_wait = data.get('val_wait', 1.8)
 
                 self.b_btn.text = str(int(self.val_base))
                 self.km_btn.text = str(int(self.val_km))
