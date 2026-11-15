@@ -21,7 +21,7 @@ Window.clearcolor = (1, 1, 1, 1)
 
 STATE_FILE = "meter_state.json"
 
-# ஆண்ட்ராய்டு நேரடி GPS லொகேஷன் லிசனர் (Android 12+ List & Single Location ஆதரவுடன்)
+# ஆண்ட்ராய்டு நேரடி GPS லொகேஷன் லிசனர்
 if platform == 'android':
     from jnius import autoclass, PythonJavaClass, java_method
     PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -41,9 +41,10 @@ if platform == 'android':
             if location is not None:
                 lat = location.getLatitude()
                 lon = location.getLongitude()
-                speed = location.getSpeed() if location.hasSpeed() else 0.0
+                has_spd = location.hasSpeed()
+                speed = location.getSpeed() if has_spd else 0.0
                 accuracy = location.getAccuracy() if location.hasAccuracy() else 50.0
-                Clock.schedule_once(lambda dt: self.callback(lat, lon, speed, accuracy), 0)
+                Clock.schedule_once(lambda dt: self.callback(lat, lon, speed, has_spd, accuracy), 0)
 
         @java_method('(Landroid/location/Location;)V', name='onLocationChanged')
         def onLocationChangedSingle(self, location):
@@ -308,22 +309,12 @@ class TaxiMeterApp(App):
             try:
                 activity = PythonActivity.mActivity
                 def req_updates():
-                    started = False
                     try:
+                        # GPS_PROVIDER-ஐ மட்டும் பயன்படுத்துவதால் டவர் ஜம்ப் (Drift) முற்றிலும் தடுக்கப்படும்
                         self.loc_manager.requestLocationUpdates(
                             LocationManager.GPS_PROVIDER, 1000, 0.0, self.loc_listener, Looper.getMainLooper()
                         )
-                        started = True
                     except Exception:
-                        pass
-                    try:
-                        self.loc_manager.requestLocationUpdates(
-                            LocationManager.NETWORK_PROVIDER, 2000, 0.0, self.loc_listener, Looper.getMainLooper()
-                        )
-                        started = True
-                    except Exception:
-                        pass
-                    if not started:
                         Clock.schedule_once(lambda dt: setattr(self.gps_status_label, 'text', "GPS: Provider Error"), 0)
                 activity.runOnUiThread(req_updates)
             except Exception as e:
@@ -343,20 +334,22 @@ class TaxiMeterApp(App):
                 pass
         self.gps_status_label.text = "GPS: Stopped"
 
-    def on_gps_location(self, lat, lon, speed, accuracy):
+    def on_gps_location(self, lat, lon, speed, has_spd, accuracy):
         if not self.is_running:
             return
 
         if lat is None or lon is None:
             return
 
-        spd_kmh = speed * 3.6 if speed else 0.0
-        self.gps_status_label.text = f"GPS: Active (Acc: {int(accuracy)}m | {spd_kmh:.1f} km/h)"
+        spd_kmh = speed * 3.6 if (has_spd and speed) else 0.0
+        state_txt = "MOVING" if spd_kmh >= 1.6 else "STOPPED"
+        self.gps_status_label.text = f"GPS: {state_txt} ({spd_kmh:.1f} km/h | Acc:{int(accuracy)}m)"
 
-        if accuracy is not None and accuracy > 150.0:
+        # 25 மீட்டருக்குள் துல்லியமாக இருக்கும் சிக்னல்களை மட்டும் எடுத்தல்
+        if accuracy is not None and accuracy > 25.0:
             return
 
-        # முதல் சிக்னலை ஆரம்ப புள்ளியாகப் பதிவு செய்தல் (ஆரம்ப 500m பிழையைத் தடுக்க)
+        # முதல் சிக்னலை ஆரம்ப புள்ளியாகப் பதிவு செய்தல்
         if self.gps_lock_count == 0 or self.last_lat is None:
             self.last_lat = lat
             self.last_lon = lon
@@ -365,8 +358,18 @@ class TaxiMeterApp(App):
 
         dist = self.calculate_distance(self.last_lat, self.last_lon, lat, lon)
 
-        # 2 km/h வேகம் = 0.55 m/s -> 1.5 மீட்டர் (0.0015 km) நகர்ந்தாலே உடனே கணக்கிடுதல்
-        if 0.0015 <= dist <= 0.500:
+        # இரட்டைச் சரிபார்ப்பு (Dual Check):
+        # 1) GPS வேகம் குறைந்தது 1.6 km/h (0.45 m/s) இருக்க வேண்டும் (வண்டி நிற்கும்போது 0.0 ஆக இருக்கும்)
+        # 2) அல்லது வேகத் தகவல் இல்லாதபட்சத்தில் குறைந்தது 6 மீட்டர் (0.006 km) உண்மையான நகர்வு இருக்க வேண்டும்
+        is_actually_moving = False
+        if has_spd:
+            if speed >= 0.45 and 0.0015 <= dist <= 0.300:
+                is_actually_moving = True
+        else:
+            if 0.006 <= dist <= 0.300:
+                is_actually_moving = True
+
+        if is_actually_moving:
             self.distance_km += dist
             self.km_display.text = f"{self.distance_km:.2f} KM"
             self.recalculate_fare()
@@ -374,8 +377,11 @@ class TaxiMeterApp(App):
             self.last_lat = lat
             self.last_lon = lon
             self.save_state()
-        elif speed >= 0.45:
-            self.is_moving = True
+        else:
+            # வண்டி நிற்கும்போது last_lat/last_lon-ஐ தற்போதைய இடத்திற்கு அப்டேட் செய்வதால் சிறிய அலைச்சல் சேராது
+            if spd_kmh < 1.0:
+                self.last_lat = lat
+                self.last_lon = lon
 
     def calculate_distance(self, lat1, lon1, lat2, lon2):
         r = 6371.0
