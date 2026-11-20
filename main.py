@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import time
 import datetime
 import urllib.parse
 import webbrowser
@@ -45,7 +46,6 @@ if platform == 'android':
                 has_spd = location.hasSpeed()
                 speed = location.getSpeed() if has_spd else 0.0
                 accuracy = location.getAccuracy() if location.hasAccuracy() else 50.0
-                # பின்னணியிலும் (Background) உடனடியாகக் கணக்கிட நேரடியாக அழைத்தல்
                 self.callback(lat, lon, speed, has_spd, accuracy)
 
         @java_method('(Landroid/location/Location;)V', name='onLocationChanged')
@@ -80,6 +80,13 @@ class TaxiMeterApp(App):
         self.is_running = False
         self.is_waiting = False
         self.is_moving = False
+        
+        # கடிகார நேர அடிப்படையிலான மாறிகள் (System Clock Timestamps)
+        self.trip_start_ts = None
+        self.accumulated_wait_sec = 0.0
+        self.wait_start_ts = None
+        self.last_gps_move_ts = None
+
         self.trip_seconds = 0
         self.wait_seconds = 0
         self.distance_km = 0.0
@@ -90,7 +97,6 @@ class TaxiMeterApp(App):
         self.loc_manager = None
         self.loc_listener = None
         self.wake_lock = None
-        self.last_tick_time = None
 
         self.val_base = 70.0
         self.base_km_limit = 1.5
@@ -157,7 +163,7 @@ class TaxiMeterApp(App):
 
         main_layout.add_widget(header_banner)
 
-        # ரேட் கண்ட்ரோல் (4 காலம்கள்: BASE FARE, MIN KM, PER KM, WAIT/MIN)
+        # ரேட் கண்ட்ரோல் (4 காலம்கள்: BASE RS, MIN KM, PER KM, WAIT/MIN)
         settings_grid = GridLayout(cols=4, size_hint=(1, 0.14), spacing=4)
         minus_col = (0.85, 0.25, 0.2, 1)
         plus_col = (0.15, 0.55, 0.85, 1)
@@ -177,7 +183,7 @@ class TaxiMeterApp(App):
         b_ctrl.add_widget(b_p)
         b_box.add_widget(b_ctrl)
 
-        # 2. Minimum KM (புதிய வசதி)
+        # 2. Minimum KM
         mkm_box = BoxLayout(orientation='vertical')
         mkm_box.add_widget(Label(text="MIN KM", font_size='10sp', color=(0.3, 0.3, 0.3, 1), bold=True))
         mkm_ctrl = BoxLayout(orientation='horizontal', spacing=1)
@@ -294,17 +300,19 @@ class TaxiMeterApp(App):
 
         self.init_gps()
         self.load_state()
-        Clock.schedule_interval(self.update_timer, 1.0)
+        Clock.schedule_interval(self.update_timer, 0.5)
         return main_layout
 
-    # வேறு ஆப்பிற்குச் சென்றாலும் (Background) ஆப் நிறுத்தப்படாமல் இயங்க வைக்கும் அமைப்பு
     def on_pause(self):
         self.save_state()
         return True
 
     def on_resume(self):
-        self.recalculate_fare()
+        self.sync_clock_calculations()
         self.update_ui_labels()
+
+    def on_stop(self):
+        self.save_state()
 
     def set_screen_and_cpu_wake(self, keep_on=True):
         if platform == 'android':
@@ -319,7 +327,6 @@ class TaxiMeterApp(App):
                         window.clearFlags(FLAG_KEEP_SCREEN_ON)
                 activity.runOnUiThread(apply_flag)
 
-                # வேறு ஆப்பிற்குச் சென்றாலும் CPU தூங்காமல் பின்னணியில் இயங்க PARTIAL_WAKE_LOCK
                 pm = activity.getSystemService(Context.POWER_SERVICE)
                 if keep_on:
                     if self.wake_lock is None:
@@ -380,6 +387,7 @@ class TaxiMeterApp(App):
         if lat is None or lon is None:
             return
 
+        now_ts = time.time()
         spd_kmh = speed * 3.6 if (has_spd and speed) else 0.0
         state_txt = "MOVING" if spd_kmh >= 1.6 else "STOPPED"
         
@@ -407,17 +415,29 @@ class TaxiMeterApp(App):
                 is_actually_moving = True
 
         if is_actually_moving:
+            # வண்டி நகரத் தொடங்கியதும், அதுவரை நின்றிருந்த வெயிட்டிங் நேரத்தைக் கடிகாரப்படி சேமித்தல்
+            if self.is_waiting and self.wait_start_ts is not None:
+                self.accumulated_wait_sec += max(0.0, now_ts - self.wait_start_ts)
+                self.wait_start_ts = None
+                self.is_waiting = False
+
             self.distance_km += dist
-            self.recalculate_fare()
             self.is_moving = True
+            self.last_gps_move_ts = now_ts
             self.last_lat = lat
             self.last_lon = lon
+            self.sync_clock_calculations()
             self.save_state()
             Clock.schedule_once(lambda dt: self.update_ui_labels(), 0)
         else:
             if spd_kmh < 1.0:
                 self.last_lat = lat
                 self.last_lon = lon
+                # வண்டி நின்றவுடன் வெயிட்டிங் கடிகாரத்தை உடனே ஸ்டார்ட் செய்தல்
+                if not self.is_waiting:
+                    self.is_waiting = True
+                    self.wait_start_ts = now_ts
+                    self.save_state()
 
     def calculate_distance(self, lat1, lon1, lat2, lon2):
         r = 6371.0
@@ -428,6 +448,27 @@ class TaxiMeterApp(App):
              math.sin(d_lon / 2) ** 2)
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         return r * c
+
+    # சிஸ்டம் கடிகாரத்தை வைத்துத் துல்லியமான Trip Time, Wait Time மற்றும் Fare கணக்கிடும் பகுதி
+    def sync_clock_calculations(self):
+        if not self.is_running or self.trip_start_ts is None:
+            return
+
+        now_ts = time.time()
+        self.trip_seconds = int(max(0.0, now_ts - self.trip_start_ts))
+
+        # வண்டி 2 வினாடிகளுக்கு மேல் நகரவில்லை என்றால் கடிகாரப்படி வெயிட்டிங் கணக்கிடுதல்
+        if not self.is_waiting:
+            if self.last_gps_move_ts is None or (now_ts - self.last_gps_move_ts) >= 2.0:
+                self.is_waiting = True
+                self.wait_start_ts = self.last_gps_move_ts if self.last_gps_move_ts else now_ts
+
+        current_wait = self.accumulated_wait_sec
+        if self.is_waiting and self.wait_start_ts is not None:
+            current_wait += max(0.0, now_ts - self.wait_start_ts)
+
+        self.wait_seconds = int(current_wait)
+        self.recalculate_fare()
 
     def open_keypad(self, target):
         self.kp_target = target
@@ -509,21 +550,33 @@ class TaxiMeterApp(App):
         self.save_state()
 
     def toggle_meter(self, instance):
+        now_ts = time.time()
         if not self.is_running:
             self.is_running = True
+            self.trip_start_ts = now_ts
+            self.accumulated_wait_sec = 0.0
+            self.wait_start_ts = now_ts
+            self.is_waiting = True
+            self.last_gps_move_ts = None
+            
             self.last_lat = None
             self.last_lon = None
             self.gps_lock_count = 0
-            self.last_tick_time = datetime.datetime.now()
+            
             self.start_btn.text = "STOP"
             self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
             self.set_screen_and_cpu_wake(True)
             self.start_android_gps()
+            self.save_state()
         else:
+            self.sync_clock_calculations()
+            if self.is_waiting and self.wait_start_ts is not None:
+                self.accumulated_wait_sec += max(0.0, now_ts - self.wait_start_ts)
+                self.wait_start_ts = None
+            
             self.is_running = False
             self.is_waiting = False
             self.is_moving = False
-            self.last_tick_time = None
             self.start_btn.text = "START"
             self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
             self.wait_btn.text = "AUTO WAIT"
@@ -535,25 +588,37 @@ class TaxiMeterApp(App):
 
     def toggle_waiting(self, instance):
         if self.is_running:
-            self.is_waiting = not self.is_waiting
-            if self.is_waiting:
+            now_ts = time.time()
+            if not self.is_waiting:
+                self.is_waiting = True
+                self.wait_start_ts = now_ts
                 self.wait_btn.text = "WAITING..."
                 self.wait_btn.background_color = (0.3, 0.3, 0.8, 1)
             else:
+                if self.wait_start_ts is not None:
+                    self.accumulated_wait_sec += max(0.0, now_ts - self.wait_start_ts)
+                    self.wait_start_ts = None
+                self.is_waiting = False
+                self.last_gps_move_ts = now_ts
                 self.wait_btn.text = "AUTO WAIT"
                 self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+            self.save_state()
 
     def reset_meter(self, instance):
         self.is_running = False
         self.is_waiting = False
         self.is_moving = False
+        self.trip_start_ts = None
+        self.accumulated_wait_sec = 0.0
+        self.wait_start_ts = None
+        self.last_gps_move_ts = None
+        
         self.trip_seconds = 0
         self.wait_seconds = 0
         self.distance_km = 0.0
         self.last_lat = None
         self.last_lon = None
         self.gps_lock_count = 0
-        self.last_tick_time = None
 
         self.set_screen_and_cpu_wake(False)
         self.stop_android_gps()
@@ -591,43 +656,32 @@ class TaxiMeterApp(App):
         w_sec = self.wait_seconds % 60
         self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
 
+        if self.is_running:
+            if self.is_waiting:
+                self.wait_btn.text = "WAITING..."
+                self.wait_btn.background_color = (0.3, 0.3, 0.8, 1)
+            else:
+                self.wait_btn.text = "AUTO WAIT"
+                self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
+
     def update_timer(self, dt):
         now = datetime.datetime.now()
         self.clock_display.text = now.strftime("%d-%m-%Y | %I:%M:%S %p")
 
         if self.is_running:
-            # வேறு ஆப்பிற்குச் சென்று திரும்பினாலும் உண்மையான நேர வித்தியாசத்தைக் (Elapsed Seconds) கணக்கிடுதல்
-            if self.last_tick_time is not None:
-                elapsed = int((now - self.last_tick_time).total_seconds())
-                if elapsed < 1:
-                    elapsed = 1
-            else:
-                elapsed = 1
-            self.last_tick_time = now
-
-            self.trip_seconds += elapsed
-
-            if not self.is_moving:
-                self.is_waiting = True
-                self.wait_btn.text = "WAITING..."
-                self.wait_btn.background_color = (0.3, 0.3, 0.8, 1)
-                self.wait_seconds += elapsed
-                self.recalculate_fare()
-            else:
-                if self.is_waiting:
-                    self.is_waiting = False
-                    self.wait_btn.text = "AUTO WAIT"
-                    self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
-
+            self.sync_clock_calculations()
             self.update_ui_labels()
-            self.is_moving = False
-
             if self.trip_seconds % 3 == 0:
                 self.save_state()
 
     def save_state(self):
         data = {
             'is_running': self.is_running,
+            'is_waiting': self.is_waiting,
+            'trip_start_ts': self.trip_start_ts,
+            'accumulated_wait_sec': self.accumulated_wait_sec,
+            'wait_start_ts': self.wait_start_ts,
+            'last_gps_move_ts': self.last_gps_move_ts,
             'trip_seconds': self.trip_seconds,
             'wait_seconds': self.wait_seconds,
             'distance_km': self.distance_km,
@@ -649,6 +703,12 @@ class TaxiMeterApp(App):
                 with open(STATE_FILE, 'r') as f:
                     data = json.load(f)
                 self.is_running = data.get('is_running', False)
+                self.is_waiting = data.get('is_waiting', False)
+                self.trip_start_ts = data.get('trip_start_ts', None)
+                self.accumulated_wait_sec = data.get('accumulated_wait_sec', 0.0)
+                self.wait_start_ts = data.get('wait_start_ts', None)
+                self.last_gps_move_ts = data.get('last_gps_move_ts', None)
+                
                 self.trip_seconds = data.get('trip_seconds', 0)
                 self.wait_seconds = data.get('wait_seconds', 0)
                 self.distance_km = data.get('distance_km', 0.0)
@@ -663,14 +723,15 @@ class TaxiMeterApp(App):
                 self.km_btn.text = str(int(self.val_km))
                 self.w_btn.text = f"{self.val_wait:.1f}"
 
-                self.update_ui_labels()
-
                 if self.is_running:
-                    self.last_tick_time = datetime.datetime.now()
+                    # ஆப்பை முழுமையாக Close செய்து மீண்டும் திறந்தாலும் கடிகார நேரப்படி உடனே கணக்கிடுதல்
+                    self.sync_clock_calculations()
                     self.start_btn.text = "STOP"
                     self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
                     self.set_screen_and_cpu_wake(True)
                     self.start_android_gps()
+
+                self.update_ui_labels()
             except Exception:
                 pass
 
