@@ -28,6 +28,7 @@ if platform == 'android':
     Context = autoclass('android.content.Context')
     LocationManager = autoclass('android.location.LocationManager')
     Looper = autoclass('android.os.Looper')
+    PowerManager = autoclass('android.os.PowerManager')
 
     class AndroidLocationListener(PythonJavaClass):
         __javainterfaces__ = ['android/location/LocationListener']
@@ -44,7 +45,8 @@ if platform == 'android':
                 has_spd = location.hasSpeed()
                 speed = location.getSpeed() if has_spd else 0.0
                 accuracy = location.getAccuracy() if location.hasAccuracy() else 50.0
-                Clock.schedule_once(lambda dt: self.callback(lat, lon, speed, has_spd, accuracy), 0)
+                # பின்னணியிலும் (Background) உடனடியாகக் கணக்கிட நேரடியாக அழைத்தல்
+                self.callback(lat, lon, speed, has_spd, accuracy)
 
         @java_method('(Landroid/location/Location;)V', name='onLocationChanged')
         def onLocationChangedSingle(self, location):
@@ -87,15 +89,17 @@ class TaxiMeterApp(App):
         self.gps_lock_count = 0
         self.loc_manager = None
         self.loc_listener = None
+        self.wake_lock = None
+        self.last_tick_time = None
 
         self.val_base = 70.0
+        self.base_km_limit = 1.5
         self.val_km = 25.0
         self.val_wait = 1.8
-        self.base_km_limit = 1.5
         self.total_fare = self.val_base
         self.upi_id = "9698421798@kotak811"
 
-        main_layout = BoxLayout(orientation='vertical', padding=12, spacing=8)
+        main_layout = BoxLayout(orientation='vertical', padding=10, spacing=8)
 
         # --- டிசைன் செய்யப்பட்ட தலைப்பு பேனர் ---
         header_banner = BoxLayout(
@@ -130,13 +134,13 @@ class TaxiMeterApp(App):
         title_col = BoxLayout(orientation='vertical', spacing=2)
         title_col.add_widget(Label(
             text="TAMILAN AUTO METER",
-            font_size='20sp',
+            font_size='19sp',
             bold=True,
             color=(0.08, 0.08, 0.08, 1)
         ))
         self.clock_display = Label(
             text=datetime.datetime.now().strftime("%d-%m-%Y | %I:%M:%S %p"),
-            font_size='13sp',
+            font_size='12sp',
             bold=True,
             color=(0.2, 0.2, 0.2, 1)
         )
@@ -144,7 +148,7 @@ class TaxiMeterApp(App):
         
         self.gps_status_label = Label(
             text="GPS: Ready (Press START)",
-            font_size='12sp',
+            font_size='11sp',
             bold=True,
             color=(0.0, 0.45, 0.1, 1)
         )
@@ -153,50 +157,65 @@ class TaxiMeterApp(App):
 
         main_layout.add_widget(header_banner)
 
-        # ரேட் கண்ட்ரோல்
-        settings_grid = GridLayout(cols=3, size_hint=(1, 0.14), spacing=6)
+        # ரேட் கண்ட்ரோல் (4 காலம்கள்: BASE FARE, MIN KM, PER KM, WAIT/MIN)
+        settings_grid = GridLayout(cols=4, size_hint=(1, 0.14), spacing=4)
         minus_col = (0.85, 0.25, 0.2, 1)
         plus_col = (0.15, 0.55, 0.85, 1)
 
         # 1. Base Fare
         b_box = BoxLayout(orientation='vertical')
-        b_box.add_widget(Label(text="BASE FARE", font_size='11sp', color=(0.3, 0.3, 0.3, 1), bold=True))
-        b_ctrl = BoxLayout(orientation='horizontal', spacing=2)
-        b_m = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=minus_col)
+        b_box.add_widget(Label(text="BASE RS", font_size='10sp', color=(0.3, 0.3, 0.3, 1), bold=True))
+        b_ctrl = BoxLayout(orientation='horizontal', spacing=1)
+        b_m = Button(text="-", font_size='16sp', bold=True, size_hint=(0.28, 1), background_normal='', background_color=minus_col)
         b_m.bind(on_press=lambda x: self.adjust_rate('base', -5))
-        self.b_btn = Button(text=str(int(self.val_base)), font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.9, 0.9, 0.9, 1), color=(0.1, 0.1, 0.1, 1))
+        self.b_btn = Button(text=str(int(self.val_base)), font_size='15sp', bold=True, size_hint=(0.44, 1), background_normal='', background_color=(0.9, 0.9, 0.9, 1), color=(0.1, 0.1, 0.1, 1))
         self.b_btn.bind(on_press=lambda x: self.open_keypad('base'))
-        b_p = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=plus_col)
+        b_p = Button(text="+", font_size='16sp', bold=True, size_hint=(0.28, 1), background_normal='', background_color=plus_col)
         b_p.bind(on_press=lambda x: self.adjust_rate('base', 5))
         b_ctrl.add_widget(b_m)
         b_ctrl.add_widget(self.b_btn)
         b_ctrl.add_widget(b_p)
         b_box.add_widget(b_ctrl)
 
-        # 2. Per KM
+        # 2. Minimum KM (புதிய வசதி)
+        mkm_box = BoxLayout(orientation='vertical')
+        mkm_box.add_widget(Label(text="MIN KM", font_size='10sp', color=(0.3, 0.3, 0.3, 1), bold=True))
+        mkm_ctrl = BoxLayout(orientation='horizontal', spacing=1)
+        mkm_m = Button(text="-", font_size='16sp', bold=True, size_hint=(0.28, 1), background_normal='', background_color=minus_col)
+        mkm_m.bind(on_press=lambda x: self.adjust_rate('min_km', -0.5))
+        self.mkm_btn = Button(text=f"{self.base_km_limit:.1f}", font_size='15sp', bold=True, size_hint=(0.44, 1), background_normal='', background_color=(0.9, 0.9, 0.9, 1), color=(0.1, 0.1, 0.1, 1))
+        self.mkm_btn.bind(on_press=lambda x: self.open_keypad('min_km'))
+        mkm_p = Button(text="+", font_size='16sp', bold=True, size_hint=(0.28, 1), background_normal='', background_color=plus_col)
+        mkm_p.bind(on_press=lambda x: self.adjust_rate('min_km', 0.5))
+        mkm_ctrl.add_widget(mkm_m)
+        mkm_ctrl.add_widget(self.mkm_btn)
+        mkm_ctrl.add_widget(mkm_p)
+        mkm_box.add_widget(mkm_ctrl)
+
+        # 3. Per KM
         km_box = BoxLayout(orientation='vertical')
-        km_box.add_widget(Label(text="PER KM", font_size='11sp', color=(0.3, 0.3, 0.3, 1), bold=True))
-        km_ctrl = BoxLayout(orientation='horizontal', spacing=2)
-        km_m = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=minus_col)
+        km_box.add_widget(Label(text="PER KM", font_size='10sp', color=(0.3, 0.3, 0.3, 1), bold=True))
+        km_ctrl = BoxLayout(orientation='horizontal', spacing=1)
+        km_m = Button(text="-", font_size='16sp', bold=True, size_hint=(0.28, 1), background_normal='', background_color=minus_col)
         km_m.bind(on_press=lambda x: self.adjust_rate('km', -1))
-        self.km_btn = Button(text=str(int(self.val_km)), font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.9, 0.9, 0.9, 1), color=(0.1, 0.1, 0.1, 1))
+        self.km_btn = Button(text=str(int(self.val_km)), font_size='15sp', bold=True, size_hint=(0.44, 1), background_normal='', background_color=(0.9, 0.9, 0.9, 1), color=(0.1, 0.1, 0.1, 1))
         self.km_btn.bind(on_press=lambda x: self.open_keypad('km'))
-        km_p = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=plus_col)
+        km_p = Button(text="+", font_size='16sp', bold=True, size_hint=(0.28, 1), background_normal='', background_color=plus_col)
         km_p.bind(on_press=lambda x: self.adjust_rate('km', 1))
         km_ctrl.add_widget(km_m)
         km_ctrl.add_widget(self.km_btn)
         km_ctrl.add_widget(km_p)
         km_box.add_widget(km_ctrl)
 
-        # 3. Wait/Min
+        # 4. Wait/Min
         w_box = BoxLayout(orientation='vertical')
-        w_box.add_widget(Label(text="WAIT/MIN", font_size='11sp', color=(0.3, 0.3, 0.3, 1), bold=True))
-        w_ctrl = BoxLayout(orientation='horizontal', spacing=2)
-        w_m = Button(text="-", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=minus_col)
+        w_box.add_widget(Label(text="WAIT/MIN", font_size='10sp', color=(0.3, 0.3, 0.3, 1), bold=True))
+        w_ctrl = BoxLayout(orientation='horizontal', spacing=1)
+        w_m = Button(text="-", font_size='16sp', bold=True, size_hint=(0.28, 1), background_normal='', background_color=minus_col)
         w_m.bind(on_press=lambda x: self.adjust_rate('wait', -0.5))
-        self.w_btn = Button(text=f"{self.val_wait:.1f}", font_size='18sp', bold=True, size_hint=(0.4, 1), background_normal='', background_color=(0.9, 0.9, 0.9, 1), color=(0.1, 0.1, 0.1, 1))
+        self.w_btn = Button(text=f"{self.val_wait:.1f}", font_size='15sp', bold=True, size_hint=(0.44, 1), background_normal='', background_color=(0.9, 0.9, 0.9, 1), color=(0.1, 0.1, 0.1, 1))
         self.w_btn.bind(on_press=lambda x: self.open_keypad('wait'))
-        w_p = Button(text="+", font_size='18sp', bold=True, size_hint=(0.3, 1), background_normal='', background_color=plus_col)
+        w_p = Button(text="+", font_size='16sp', bold=True, size_hint=(0.28, 1), background_normal='', background_color=plus_col)
         w_p.bind(on_press=lambda x: self.adjust_rate('wait', 0.5))
         w_ctrl.add_widget(w_m)
         w_ctrl.add_widget(self.w_btn)
@@ -204,6 +223,7 @@ class TaxiMeterApp(App):
         w_box.add_widget(w_ctrl)
 
         settings_grid.add_widget(b_box)
+        settings_grid.add_widget(mkm_box)
         settings_grid.add_widget(km_box)
         settings_grid.add_widget(w_box)
         main_layout.add_widget(settings_grid)
@@ -213,7 +233,7 @@ class TaxiMeterApp(App):
         fare_box.add_widget(Label(text="TOTAL FARE", font_size='15sp', bold=True, color=(0.3, 0.3, 0.3, 1)))
         self.fare_display = Label(
             text=f"Rs. {self.total_fare:.2f}",
-            font_size='52sp',
+            font_size='50sp',
             bold=True,
             color=(0.0, 0.6, 0.2, 1)
         )
@@ -277,7 +297,16 @@ class TaxiMeterApp(App):
         Clock.schedule_interval(self.update_timer, 1.0)
         return main_layout
 
-    def set_screen_wake(self, keep_on=True):
+    # வேறு ஆப்பிற்குச் சென்றாலும் (Background) ஆப் நிறுத்தப்படாமல் இயங்க வைக்கும் அமைப்பு
+    def on_pause(self):
+        self.save_state()
+        return True
+
+    def on_resume(self):
+        self.recalculate_fare()
+        self.update_ui_labels()
+
+    def set_screen_and_cpu_wake(self, keep_on=True):
         if platform == 'android':
             try:
                 activity = PythonActivity.mActivity
@@ -289,6 +318,17 @@ class TaxiMeterApp(App):
                     else:
                         window.clearFlags(FLAG_KEEP_SCREEN_ON)
                 activity.runOnUiThread(apply_flag)
+
+                # வேறு ஆப்பிற்குச் சென்றாலும் CPU தூங்காமல் பின்னணியில் இயங்க PARTIAL_WAKE_LOCK
+                pm = activity.getSystemService(Context.POWER_SERVICE)
+                if keep_on:
+                    if self.wake_lock is None:
+                        self.wake_lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TamilanAutoMeter::WakeLock")
+                    if not self.wake_lock.isHeld():
+                        self.wake_lock.acquire()
+                else:
+                    if self.wake_lock is not None and self.wake_lock.isHeld():
+                        self.wake_lock.release()
             except Exception:
                 pass
 
@@ -310,7 +350,6 @@ class TaxiMeterApp(App):
                 activity = PythonActivity.mActivity
                 def req_updates():
                     try:
-                        # GPS_PROVIDER-ஐ மட்டும் பயன்படுத்துவதால் டவர் ஜம்ப் (Drift) முற்றிலும் தடுக்கப்படும்
                         self.loc_manager.requestLocationUpdates(
                             LocationManager.GPS_PROVIDER, 1000, 0.0, self.loc_listener, Looper.getMainLooper()
                         )
@@ -343,13 +382,14 @@ class TaxiMeterApp(App):
 
         spd_kmh = speed * 3.6 if (has_spd and speed) else 0.0
         state_txt = "MOVING" if spd_kmh >= 1.6 else "STOPPED"
-        self.gps_status_label.text = f"GPS: {state_txt} ({spd_kmh:.1f} km/h | Acc:{int(accuracy)}m)"
+        
+        def update_status_lbl(dt):
+            self.gps_status_label.text = f"GPS: {state_txt} ({spd_kmh:.1f} km/h | Acc:{int(accuracy)}m)"
+        Clock.schedule_once(update_status_lbl, 0)
 
-        # 25 மீட்டருக்குள் துல்லியமாக இருக்கும் சிக்னல்களை மட்டும் எடுத்தல்
         if accuracy is not None and accuracy > 25.0:
             return
 
-        # முதல் சிக்னலை ஆரம்ப புள்ளியாகப் பதிவு செய்தல்
         if self.gps_lock_count == 0 or self.last_lat is None:
             self.last_lat = lat
             self.last_lon = lon
@@ -358,9 +398,6 @@ class TaxiMeterApp(App):
 
         dist = self.calculate_distance(self.last_lat, self.last_lon, lat, lon)
 
-        # இரட்டைச் சரிபார்ப்பு (Dual Check):
-        # 1) GPS வேகம் குறைந்தது 1.6 km/h (0.45 m/s) இருக்க வேண்டும் (வண்டி நிற்கும்போது 0.0 ஆக இருக்கும்)
-        # 2) அல்லது வேகத் தகவல் இல்லாதபட்சத்தில் குறைந்தது 6 மீட்டர் (0.006 km) உண்மையான நகர்வு இருக்க வேண்டும்
         is_actually_moving = False
         if has_spd:
             if speed >= 0.45 and 0.0015 <= dist <= 0.300:
@@ -371,14 +408,13 @@ class TaxiMeterApp(App):
 
         if is_actually_moving:
             self.distance_km += dist
-            self.km_display.text = f"{self.distance_km:.2f} KM"
             self.recalculate_fare()
             self.is_moving = True
             self.last_lat = lat
             self.last_lon = lon
             self.save_state()
+            Clock.schedule_once(lambda dt: self.update_ui_labels(), 0)
         else:
-            # வண்டி நிற்கும்போது last_lat/last_lon-ஐ தற்போதைய இடத்திற்கு அப்டேட் செய்வதால் சிறிய அலைச்சல் சேராது
             if spd_kmh < 1.0:
                 self.last_lat = lat
                 self.last_lon = lon
@@ -409,11 +445,17 @@ class TaxiMeterApp(App):
             grid.add_widget(btn)
         content.add_widget(grid)
 
-        save_btn = Button(text="SET RATE", font_size='18sp', bold=True, size_hint=(1, 0.15), background_normal='', background_color=(0.15, 0.68, 0.38, 1))
+        save_btn = Button(text="SET VALUE", font_size='18sp', bold=True, size_hint=(1, 0.15), background_normal='', background_color=(0.15, 0.68, 0.38, 1))
         save_btn.bind(on_press=self.kp_save)
         content.add_widget(save_btn)
 
-        self.kp_pop = Popup(title=f"Enter {target.upper()} Rate", content=content, size_hint=(0.85, 0.65))
+        title_map = {
+            'base': 'Enter Base Fare (Rs)',
+            'min_km': 'Enter Minimum KM',
+            'km': 'Enter Per KM Rate (Rs)',
+            'wait': 'Enter Wait/Min Rate (Rs)'
+        }
+        self.kp_pop = Popup(title=title_map.get(target, "Enter Value"), content=content, size_hint=(0.85, 0.65))
         self.kp_pop.open()
 
     def kp_press(self, inst):
@@ -433,6 +475,9 @@ class TaxiMeterApp(App):
                 if self.kp_target == 'base':
                     self.val_base = max(0.0, num)
                     self.b_btn.text = str(int(self.val_base)) if self.val_base.is_integer() else f"{self.val_base:.1f}"
+                elif self.kp_target == 'min_km':
+                    self.base_km_limit = max(0.0, num)
+                    self.mkm_btn.text = f"{self.base_km_limit:.1f}"
                 elif self.kp_target == 'km':
                     self.val_km = max(0.0, num)
                     self.km_btn.text = str(int(self.val_km)) if self.val_km.is_integer() else f"{self.val_km:.1f}"
@@ -440,6 +485,7 @@ class TaxiMeterApp(App):
                     self.val_wait = max(0.0, num)
                     self.w_btn.text = f"{self.val_wait:.1f}"
                 self.recalculate_fare()
+                self.update_ui_labels()
                 self.save_state()
             except ValueError:
                 pass
@@ -449,13 +495,17 @@ class TaxiMeterApp(App):
         if kind == 'base':
             self.val_base = max(0.0, self.val_base + step)
             self.b_btn.text = str(int(self.val_base)) if self.val_base.is_integer() else f"{self.val_base:.1f}"
+        elif kind == 'min_km':
+            self.base_km_limit = max(0.0, round(self.base_km_limit + step, 1))
+            self.mkm_btn.text = f"{self.base_km_limit:.1f}"
         elif kind == 'km':
             self.val_km = max(0.0, self.val_km + step)
             self.km_btn.text = str(int(self.val_km)) if self.val_km.is_integer() else f"{self.val_km:.1f}"
         elif kind == 'wait':
-            self.val_wait = max(0.0, self.val_wait + step)
+            self.val_wait = max(0.0, round(self.val_wait + step, 1))
             self.w_btn.text = f"{self.val_wait:.1f}"
         self.recalculate_fare()
+        self.update_ui_labels()
         self.save_state()
 
     def toggle_meter(self, instance):
@@ -464,19 +514,21 @@ class TaxiMeterApp(App):
             self.last_lat = None
             self.last_lon = None
             self.gps_lock_count = 0
+            self.last_tick_time = datetime.datetime.now()
             self.start_btn.text = "STOP"
             self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
-            self.set_screen_wake(True)
+            self.set_screen_and_cpu_wake(True)
             self.start_android_gps()
         else:
             self.is_running = False
             self.is_waiting = False
             self.is_moving = False
+            self.last_tick_time = None
             self.start_btn.text = "START"
             self.start_btn.background_color = (0.15, 0.68, 0.38, 1)
             self.wait_btn.text = "AUTO WAIT"
             self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
-            self.set_screen_wake(False)
+            self.set_screen_and_cpu_wake(False)
             self.stop_android_gps()
             self.save_state()
             self.show_payment_options(None)
@@ -501,8 +553,9 @@ class TaxiMeterApp(App):
         self.last_lat = None
         self.last_lon = None
         self.gps_lock_count = 0
+        self.last_tick_time = None
 
-        self.set_screen_wake(False)
+        self.set_screen_and_cpu_wake(False)
         self.stop_android_gps()
 
         self.start_btn.text = "START"
@@ -511,11 +564,8 @@ class TaxiMeterApp(App):
         self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
         self.gps_status_label.text = "GPS: Ready (Press START)"
 
-        self.total_fare = self.val_base
-        self.fare_display.text = f"Rs. {self.total_fare:.2f}"
-        self.km_display.text = "0.00 KM"
-        self.time_display.text = "00:00"
-        self.wait_display.text = "00:00"
+        self.recalculate_fare()
+        self.update_ui_labels()
 
         if os.path.exists(STATE_FILE):
             try:
@@ -530,26 +580,38 @@ class TaxiMeterApp(App):
 
         waiting_cost = (self.wait_seconds / 60.0) * self.val_wait
         self.total_fare = self.val_base + distance_cost + waiting_cost
+
+    def update_ui_labels(self):
         self.fare_display.text = f"Rs. {self.total_fare:.2f}"
+        self.km_display.text = f"{self.distance_km:.2f} KM"
+        t_min = self.trip_seconds // 60
+        t_sec = self.trip_seconds % 60
+        self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
+        w_min = self.wait_seconds // 60
+        w_sec = self.wait_seconds % 60
+        self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
 
     def update_timer(self, dt):
-        self.clock_display.text = datetime.datetime.now().strftime("%d-%m-%Y | %I:%M:%S %p")
+        now = datetime.datetime.now()
+        self.clock_display.text = now.strftime("%d-%m-%Y | %I:%M:%S %p")
 
         if self.is_running:
-            self.trip_seconds += 1
-            t_min = self.trip_seconds // 60
-            t_sec = self.trip_seconds % 60
-            self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
+            # வேறு ஆப்பிற்குச் சென்று திரும்பினாலும் உண்மையான நேர வித்தியாசத்தைக் (Elapsed Seconds) கணக்கிடுதல்
+            if self.last_tick_time is not None:
+                elapsed = int((now - self.last_tick_time).total_seconds())
+                if elapsed < 1:
+                    elapsed = 1
+            else:
+                elapsed = 1
+            self.last_tick_time = now
+
+            self.trip_seconds += elapsed
 
             if not self.is_moving:
                 self.is_waiting = True
                 self.wait_btn.text = "WAITING..."
                 self.wait_btn.background_color = (0.3, 0.3, 0.8, 1)
-                
-                self.wait_seconds += 1
-                w_min = self.wait_seconds // 60
-                w_sec = self.wait_seconds % 60
-                self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
+                self.wait_seconds += elapsed
                 self.recalculate_fare()
             else:
                 if self.is_waiting:
@@ -557,6 +619,7 @@ class TaxiMeterApp(App):
                     self.wait_btn.text = "AUTO WAIT"
                     self.wait_btn.background_color = (0.85, 0.5, 0.1, 1)
 
+            self.update_ui_labels()
             self.is_moving = False
 
             if self.trip_seconds % 3 == 0:
@@ -570,6 +633,7 @@ class TaxiMeterApp(App):
             'distance_km': self.distance_km,
             'total_fare': self.total_fare,
             'val_base': self.val_base,
+            'base_km_limit': self.base_km_limit,
             'val_km': self.val_km,
             'val_wait': self.val_wait
         }
@@ -590,26 +654,22 @@ class TaxiMeterApp(App):
                 self.distance_km = data.get('distance_km', 0.0)
                 self.total_fare = data.get('total_fare', self.val_base)
                 self.val_base = data.get('val_base', 70.0)
+                self.base_km_limit = data.get('base_km_limit', 1.5)
                 self.val_km = data.get('val_km', 25.0)
                 self.val_wait = data.get('val_wait', 1.8)
 
                 self.b_btn.text = str(int(self.val_base))
+                self.mkm_btn.text = f"{self.base_km_limit:.1f}"
                 self.km_btn.text = str(int(self.val_km))
                 self.w_btn.text = f"{self.val_wait:.1f}"
 
-                self.km_display.text = f"{self.distance_km:.2f} KM"
-                self.fare_display.text = f"Rs. {self.total_fare:.2f}"
-                t_min = self.trip_seconds // 60
-                t_sec = self.trip_seconds % 60
-                self.time_display.text = f"{t_min:02d}:{t_sec:02d}"
-                w_min = self.wait_seconds // 60
-                w_sec = self.wait_seconds % 60
-                self.wait_display.text = f"{w_min:02d}:{w_sec:02d}"
+                self.update_ui_labels()
 
                 if self.is_running:
+                    self.last_tick_time = datetime.datetime.now()
                     self.start_btn.text = "STOP"
                     self.start_btn.background_color = (0.9, 0.2, 0.2, 1)
-                    self.set_screen_wake(True)
+                    self.set_screen_and_cpu_wake(True)
                     self.start_android_gps()
             except Exception:
                 pass
